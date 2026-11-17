@@ -2703,11 +2703,20 @@ void main() {
       float sp = n3(P * 0.55 + 1.0), big = fbm3(P * 0.004 + 3.0), mid = n3(P * 0.04 + 7.0);
       vec3 leaf = mix(vec3(0.06, 0.13, 0.03), vec3(0.14, 0.24, 0.06), mid);
       vec3 fl;
+      if (fk == 6) {
+        // v2.0 雪原：白里透一点蓝，风吹出的一道道雪棱、低洼处偏蓝灰，近看有细碎的闪点
+        float drift = fbm3(vec3(P.x * 0.002, 0.0, P.z * 0.002) + 3.0), sas = 0.5 + 0.5 * sin(P.x * 0.09 + P.z * 0.03 + n3(P * 0.02) * 6.0);
+        fl = mix(vec3(0.70, 0.76, 0.84), vec3(0.93, 0.95, 0.98), smoothstep(0.3, 0.7, drift)) * (0.94 + 0.06 * sas);
+        float spark = step(0.985, n3(P * 3.1 + floor(uTime * 0.0))) * (1.0 - smoothstep(1.0, 3.0, pix));
+        albedo = mix(albedo, fl, smoothstep(0.2, 0.55, N.y)); rough = mix(rough, 0.55, upF); emissive += vec3(0.6, 0.7, 0.8) * spark * 0.2;
+        flag = 0.0; trans = 0.0; bumpH = sas * 0.6 + drift; bumpK = 0.3 * (1.0 - smoothstep(2.0, 20.0, pix));
+      } else {
       if (fk == 3) { fl = mix(vec3(0.86, 0.62, 0.02), vec3(0.98, 0.80, 0.10), sp) * (0.8 + 0.3 * big); fl = mix(fl, leaf, smoothstep(0.55, 0.8, mid * 0.7 + (1.0 - sp) * 0.4) * 0.55); }
       else if (fk == 4) { float rows = 0.5 + 0.5 * sin((P.x * 0.6 - P.z * 0.8) * 0.22); fl = mix(leaf, mix(vec3(0.95, 0.66, 0.06), vec3(0.35, 0.18, 0.05), smoothstep(0.75, 0.9, sp)), smoothstep(0.3, 0.6, sp * 0.6 + rows * 0.45)); }
       else { vec3 rc = mix(vec3(0.45, 0.03, 0.05), vec3(0.75, 0.40, 0.48), step(0.62, big + (mid - 0.5) * 0.4)); fl = mix(leaf * 0.75, rc * (0.8 + 0.2 * sp), smoothstep(0.5, 0.85, sp * 0.45 + mid * 0.65) * 0.8); }
       albedo = mix(albedo, fl, upF);
       rough = mix(rough, 0.75, upF); flag = upF > 0.5 ? 1.0 : flag; trans = upF * 0.35; bumpK *= 1.0 - upF;
+      }
     }
   } else if (id == 9) {
     float g = n3(vec3(uv * 9.0, vIP.y * 5.0));
@@ -5406,6 +5415,19 @@ function vineCurtainGeo(w = 40, l = 90, seed = 1) {
     for (let k = 0; k < 3; k++) { const y0 = -k * L / 3, y1 = -(k + 1) * L / 3; g.quadP([x - ww, y0, z], [x + ww, y0, z], [x + ww * 0.9, y1, z + 1], [x - ww * 0.9, y1, z + 1], [0, 0], [1, 0], [1, 1], [0, 1]); } }
   return g;
 }
+// v2.0 驯鹿：粗略的四足剪影（身子、颈、头、四条腿、一对叉角），朝 +z 走。单位：米
+function reindeerGeo() {
+  const g = new Geo(2048);
+  g.mat(MAT.BARK, 1, 0, 0);
+  g.box(0, 1.15, 0, 0.55, 0.6, 1.4); g.box(0, 1.0, -0.72, 0.4, 0.4, 0.15);
+  g.push(m4.mul(m4.create(), m4.translate(m4.create(), 0, 1.35, 0.7), m4.rotX(m4.create(), -0.75))); g.box(0, 0.25, 0, 0.26, 0.6, 0.3); g.pop();
+  g.box(0, 1.78, 1.05, 0.24, 0.26, 0.48);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) g.cyl(sx * 0.18, 0, sz * 0.5, 0.06, 0.07, 0.9, 5);
+  g.mat(MAT.STONE, 1, 3, 0);
+  for (const sx of [-1, 1]) { g.push(m4.mul(m4.create(), m4.translate(m4.create(), sx * 0.08, 1.9, 0.98), m4.rotZ(m4.create(), sx * -0.5))); g.cyl(0, 0, 0, 0.025, 0.02, 0.7, 4); g.cyl(0, 0.45, 0, 0.02, 0.015, 0.3, 4); g.pop(); }
+  g.mat(MAT.STONE, 1, 9, 0); g.box(0, 1.12, -0.05, 0.57, 0.3, 1.0);      // 浅色的腹毛
+  return g;
+}
 // 浮岛：上平下尖的岩体。r 半径，d 下探深度
 function islandGeo(r = 300, d = 420, seed = 1) {
   const g = new Geo(16384);
@@ -5537,7 +5559,7 @@ function bannerGeo(w = 14, l = 120, red = true) {
 }
 
 
-return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
+return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, reindeerGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
 })();
 
 // ---- world/world.js ----
@@ -6381,6 +6403,44 @@ function buildWorld(gl, onProgress = () => {}) {
     grpOf(n0, 'forest');
   }
   onProgress(0.9);
+
+  // =====================================================================
+  // v2.0 雪原光门（参考：用户的复刻成片《巨构-雪原光门》）：航线左手、登天阶与鲲渊之间的西边，
+  //   一大片浮在云海上的雪原台地，西缘立着一道五公里长、三公里高的风化素墙（正对航线），正中一道竖直的暖光门缝，
+  //   光从缝里泻到雪地上；北段墙上一个破口垂下一道瀑布，墙脚一队驯鹿慢慢走；进入这片会下雪。可落地走雪地
+  // =====================================================================
+  {
+    const n0 = W.batches.length, c0 = W.colliders.length;
+    const SN = [-6500, 1500, 28000], sn = K.fieldIslandGeo(2600, 6, 61);
+    add(sn.geo, [T(SN[0], SN[1], SN[2], 0)], { name: 'N.snow', feature: 500 });
+    col({ t: 'ell', c: [SN[0], SN[1] - 500, SN[2]], r: [2400, 560, 2400], nowalk: true });
+    (W.walk || (W.walk = [])).push({ c: SN, h: sn.h, rim: sn.rim });
+    // 墙：x = WX，沿 z 从 Z0 到 Z1，墙面朝 +x（朝航线）。竖向的扶壁、墙头一层薄雪
+    const WX = -8350, Z0 = 25300, Z1 = 30700, YB = 300, YT = 3900, TH = 240, SZ = 28000, wg = new Geo(16384);
+    wg.mat(MAT.MEGA, 1, 120, 1); wg.box(WX, (YB + YT) / 2, (Z0 + SZ - 11) / 2, TH, YT - YB, SZ - 11 - Z0); wg.box(WX, (YB + YT) / 2, (SZ + 11 + Z1) / 2, TH, YT - YB, Z1 - SZ - 11);
+    wg.box(WX - 40, (YB + YT) / 2, SZ, TH - 80, YT - YB, 18);      // 缝的后壁（缝深 40 米）
+    for (let z = Z0 + 150; z < Z1 - 100; z += 330) if (Math.abs(z - SZ) > 200) wg.box(WX + TH / 2 + 22, (YB + YT) / 2 - 150, z, 44, YT - YB - 300, 70, { aoB: 0.5 });
+    wg.mat(MAT.STONE, 1, 9, 0); wg.box(WX, YT + 4, (Z0 + Z1) / 2, TH + 10, 8, Z1 - Z0, { skip: '-y' });
+    // 北段的破口（深色的凹洞）
+    const BZ = 29700, BY = 2500; wg.mat(MAT.ROCK, 0.25, 0.0, 0); wg.box(WX + TH / 2 - 30, BY, BZ, 64, 260, 200);
+    add(wg, null, { name: 'N.wall', feature: 1500 });
+    obb([WX, (YB + YT) / 2, (Z0 + Z1) / 2], [TH / 2, (YT - YB) / 2, (Z1 - Z0) / 2]);
+    // 光门缝：一道竖直的自发光条（暖金），从雪面直到墙头以下三百米
+    const sg = new Geo(); sg.mat(MAT.GLOW, 1, 90, 0); sg.box(0, 0, 0, 8, 1, 22);
+    add(sg, [{ m: TS(WX + TH / 2 - 6, (SN[1] + YT - 300) / 2, SZ, 0, 1, YT - 300 - SN[1], 1), p: [1, 0, 1, 0] }], { name: 'N.slit', feature: 10, shadow: false });
+    // 破口垂下的瀑布（落到雪原上）
+    add(P.fall, [TS(WX + TH / 2 + 4, BY - 110, BZ, Math.PI / 2, 2.6, (BY - 110 - SN[1]) / 700, 2.6)], { name: 'N.fall', alpha: true, twoSided: true, feature: 200, shadow: false });
+    (W.fallMist || (W.fallMist = [])).push({ p: [WX + TH / 2 + 60, SN[1] + 120, BZ], w: 220 });
+    // 驯鹿：一队九头，沿墙脚朝北慢慢走（整批随时间平移，main.js 里推）
+    const rd = []; for (let i = 0; i < 9; i++) { const s = 2.6 + (i % 3) * 0.25; rd.push(TS(-i * 9 + (i % 2) * 2.5, 0, -i * 11, 0, s, s, s)); }
+    const herd = add(K.reindeerGeo(), rd, { name: 'N.herd', feature: 2, maxDist: 6000 });
+    herd.model = m4.create(); herd.prevModel = m4.create();
+    W.herd = { batch: herd, x: WX + 700, z0: Z0 + 600, z1: Z1 - 600, h: sn.h, c: SN };
+    W.snowZone = { c: SN, r: 2800, wall: { x: WX + TH / 2, z: SZ, y0: SN[1], y1: YT - 300 } };
+    (W.scenic || (W.scenic = [])).push({ id: 'N1', name: '雪原光门', sub: '墙中一线天光', en: 'THE SNOW GATE', pos: SN, r: 2900 });
+    for (let k = c0; k < W.colliders.length; k++) W.colliders[k].grp = 'forest';
+    grpOf(n0, 'forest');
+  }
 
   // ---------- 沿途的零散石峰与小浮岛（前景与视差） ----------
   {
@@ -7301,7 +7361,7 @@ __m['main.js'] = (function () {
 // 云阙 · 入口：加载 → 片头 → 朝圣之旅
 const { createContext } = __m['engine/gl.js'];
 const { Camera, DEG, m4, v3, clamp, lerp, damp, smoothstep } = __m['engine/math.js'];
-const { Geo, makeBatch } = __m['engine/mesh.js'];
+const { Geo, makeBatch, setBatchModel } = __m['engine/mesh.js'];
 const { Renderer, QUALITY } = __m['render/renderer.js'];
 const { FX } = __m['render/fx.js'];
 const { MAT } = __m['render/shaders_scene.js'];
@@ -7696,6 +7756,29 @@ function frame(dt, silent) {
     for (let i = R2.length - 1; i >= 0; i--) { const r = R2[i]; r.t += dt; if (r.t > r.life) { R2.splice(i, 1); continue; } const k = r.t / r.life; fx.ring(r.p, (0.15 + k * 1.6) * r.big, cam, [0.85, 0.92, 1.0, 0.55 * (1 - k) * (1 - k)]); }
     for (let i = D2.length - 1; i >= 0; i--) { const d = D2[i]; d.t += dt; d.v[1] -= 9.8 * dt; d.p[0] += d.v[0] * dt; d.p[1] += d.v[1] * dt; d.p[2] += d.v[2] * dt; if (d.p[1] < d.y0) { R2.push({ p: [d.p[0], d.y0 + 0.03, d.p[2]], t: 0, life: 0.7, big: 0.2 }); D2.splice(i, 1); continue; } fx.sprite(d.p, 0.03, cam, [0.85, 0.93, 1.0, 1.2]); }
     if (R2.length > 200) R2.splice(0, R2.length - 200);
+    // v2.0 雪原：驯鹿慢慢走（整批平移，走到头再从南边出现）；镜头在这片时下雪；光门缝前雪地上一道暖光
+    if (world.herd) {
+      const H = world.herd, L = H.z1 - H.z0, zz = H.z0 + ((G.time * 2.2) % L), dx = H.x - H.c[0], dz = zz - H.c[2];
+      setBatchModel(H.batch, m4.translate(m4.create(), H.x, H.c[1] + H.h(dx, dz) - 0.3, zz));
+      H.batch.center = [H.x - 40, H.c[1] + H.h(dx, dz), zz - 50]; H.batch.radius = 140;
+    }
+    if (world.snowZone && world.batches.length) {
+      const Z = world.snowZone, dc = Math.hypot(cam.pos[0] - Z.c[0], cam.pos[2] - Z.c[2]);
+      if (dc < Z.r && cam.pos[1] < Z.c[1] + 2500) {
+        const SF = fx.snow || (fx.snow = Array.from({ length: 260 }, () => [Math.random(), Math.random(), Math.random(), Math.random()]));
+        for (const f of SF) {
+          const ph = (f[3] + G.time * (0.05 + f[2] * 0.04)) % 1, R = 70;
+          const q = [cam.pos[0] + (f[0] - 0.5) * 2 * R + Math.sin(G.time * 0.7 + f[1] * 9) * 3, cam.pos[1] + 40 - ph * 80, cam.pos[2] + (f[1] - 0.5) * 2 * R + G.time * 4 % 1];
+          fx.sprite(q, 0.18 + f[2] * 0.15, cam, [0.9, 0.93, 1.0, 0.55 * Math.sin(ph * Math.PI)], 4);
+        }
+      }
+      // 墙脚被风卷起的雪雾：沿墙脚一溜缓缓翻滚的白团
+      if (dc < Z.r * 2.2) for (let i = 0; i < 26; i++) { const ph = (G.time * 0.03 + i / 26) % 1, zz = Z.wall.z - 2400 + i * 185 + Math.sin(G.time * 0.2 + i) * 40; fx.sprite([Z.wall.x + 60 + ph * 260, Z.wall.y0 + 30 + ph * 140, zz], 140 + ph * 160, cam, [0.92, 0.94, 0.98, 0.10 * Math.sin(ph * Math.PI)], 4); }
+      const w = Z.wall; if (v3.dist([w.x, w.y0, w.z], cam.pos) < 14000) {
+        fx.beam([w.x + 4, w.y0, w.z], w.y1 - w.y0, 70, cam, [1.0, 0.72, 0.38, 0.5]);
+        for (let i = 0; i < 6; i++) fx.quad([w.x + i * 90, w.y0 + 2, w.z - 30 - i * 14], [w.x + (i + 1) * 90, w.y0 + 2, w.z - 30 - (i + 1) * 14], [w.x + (i + 1) * 90, w.y0 + 2, w.z + 30 + (i + 1) * 14], [w.x + i * 90, w.y0 + 2, w.z + 30 + i * 14], [1.0, 0.7, 0.4, 0.22 * (1 - i / 6)], 4);
+      }
+    }
     // 长瀑落进云里的地方：几团慢慢翻滚、往下沉的水雾
     for (const m of (world.fallMist || [])) {
       if (v3.dist(m.p, cam.pos) > 9000) continue;
