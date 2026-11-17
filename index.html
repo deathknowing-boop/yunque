@@ -1940,6 +1940,9 @@ class Clouds {
       sunGain: 10, ambGain: 0.72, ambLow: 1.8, lightStep: 30, silver: 0.55,   // ambLow：主光贴近地平线时环境光的倍率（晨昏的云影偏冷、不发闷）
       fogMist: 0.00013, fogBase: 900, fogH: 420, fogNoise: 0.75, fogTile: 3500,
       hazeDens: 0.000018, hazeH: 2600, fogMax: 26000, fogG: 0.78,
+      // v2.2 白天的空气透视：只在太阳升到 4°~12° 以上才逐渐加进来（标题、天门开场、黄昏之后的月门都还是原来的通透空气）。
+      // 巨构要靠“远的东西发白”才读得出有多远、多大；原来白天十公里外和眼前一样清楚，所有东西都像摆在桌面上的模型
+      hazeDay: 0.00007, hazeHDay: 3000, fogMaxDay: 60000, cirrusDay: 0.3, dayFx: 1,
     };
     this.steps = opts.steps || 72; this.lightSteps = opts.lightSteps || 5; this.fogSteps = opts.fogSteps || 28;
     this.useShadow = !!opts.useShadow;
@@ -2073,7 +2076,9 @@ class Clouds {
     F.uCloudTint = p.ambTint;
     F.uCloudF = [p.cumLo, p.cumHi, p.mistH, p.mistBump];
     F.uCloudG = [p.mistEdge, p.swell, (t * p.swellSpeed) % (Math.PI * 2), (t * p.swellSpeed * 1.31) % (Math.PI * 2)];
-    F.uCirrus = [p.cirrus, p.cirrusH, p.cirrusSun, p.cirrusAmb];
+    const sy = F.uSunDir ? F.uSunDir[1] : 0, dk0 = Math.min(1, Math.max(0, (sy - 0.07) / 0.138)), dayK = dk0 * dk0 * (3 - 2 * dk0) * p.dayFx;      // 太阳高度 4°→12°
+    this.dayK = dayK;
+    F.uCirrus = [p.cirrus * (1 - (1 - p.cirrusDay) * dayK), p.cirrusH, p.cirrusSun, p.cirrusAmb];
     F.uCirrusB = [p.cirrusFlow[0] * t, p.cirrusFlow[1] * t, (F.uPixAng || 0.001) * 2, p.cirrusLo];
     // 流动：基础噪声整体以 flow 的速度平移（噪声坐标 = R·p，所以偏移是 -R·flow·t）；细节层更快、略带下沉，云边会翻卷；
     // 天气图（云丘的大轮廓）只以两成的速度跟着走
@@ -2106,7 +2111,7 @@ class Clouds {
     F.uCloudLit = [p.sunGain, p.ambGain * (1 + (p.ambLow - 1) * lowK) * (1 + p.nightAmb * (F.uNight || 0)), p.lightStep, p.silver];
     F.uFogC = [1 / p.fogTile, -V[0] * t / p.fogTile, -V[1] * t / p.fogTile, -V[2] * t / p.fogTile];      // yzw：雾的噪声跟着云一起流（同一个速度，重投影才对得上）
     F.uFogA = [p.fogMist, p.fogBase, p.fogH, p.fogNoise];
-    F.uFogB = [p.hazeDens, p.hazeH, p.fogMax, p.fogG];
+    F.uFogB = [p.hazeDens + p.hazeDay * dayK, p.hazeH + (p.hazeHDay - p.hazeH) * dayK, p.fogMax + (p.fogMaxDay - p.fogMax) * dayK, p.fogG];
   }
   // 包络高度的 CPU 近似查询在别处实现（碰撞/尾迹用），这里只负责渲染
   render(F, target) {
@@ -2129,6 +2134,7 @@ const { defChunk } = __m['engine/gl.js'];
 const MAT = {
   VERMILION: 0, ROOF: 1, STONE: 2, GOLD: 3, PLASTER: 4, WOOD: 5, CAIHUA: 6, LATTICE: 7, ROCK: 8, FOLIAGE: 9,
   BARK: 10, LANTERN: 11, SILK: 12, WATER: 13, PAVING: 14, KUN: 15, HERO: 16, GLOW: 17, BRONZE: 18, MEGA: 19, DRAGON: 20, KOI: 21,
+  TG: 22,      // v2.2 天宫式（参考视频 1）：参数 B 选子材质 0 朱漆 / 1 黑瓦金瓦当 / 2 鎏金錾花 / 3 米色铺地 / 4 白石台基 / 5 檐口金钉带 / 6 隔扇 / 7 斗拱带
 };
 
 defChunk('scene_vertex', `
@@ -2635,12 +2641,12 @@ void main() {
       float gold = smoothstep(0.10, 0.28, c.r - c.b) * smoothstep(0.18, 0.4, c.r) * smoothstep(0.02, 0.12, c.g - c.b);
       albedo = c * 0.95; rough = mix(0.55, 0.32, gold); metal = gold * 0.65;
     }
-  } else if (id == 7) {
+  } else if (id == 7 || (id == 22 && vMat.w > 5.5)) {
     // 隔扇门窗：下部裙板，上部方格棂 + 窗纸（夜里透光）
     float leaf = fract(uv.x);
     float ly = uv.y > 1.0 ? fract(uv.y) : uv.y;                 // uv.y 超过 1：上下叠成多层（巨构立面）
     float fr = max(max(step(leaf, 0.07), step(0.93, leaf)), max(max(step(ly, 0.03), step(0.97, ly)), step(abs(ly - 0.33), 0.02)));
-    vec3 wood = vec3(0.34, 0.055, 0.038);
+    vec3 wood = id == 22 ? vec3(0.20, 0.028, 0.022) : vec3(0.34, 0.055, 0.038);
     albedo = wood; rough = 0.5;
     float fd = 1.0 - smoothstep(0.03, 0.15, fwU);
     if (ly > 0.35 && fr < 0.5) {
@@ -2657,6 +2663,113 @@ void main() {
     } else if (fr < 0.5) {
       float boss = smoothstep(0.09, 0.07, length(vec2(leaf - 0.5, (ly - 0.17) * 1.4)));
       albedo = mix(wood * 1.25, vec3(1.0, 0.72, 0.28), boss * fd); metal = boss * fd; rough = mix(0.5, 0.3, boss);
+    }
+  } else if (id == 22) {
+    // v2.2 天宫式：朱漆更深更亮、瓦是褐黑的、檐口一排金瓦当、柱础鎏金錾花、地面是米色的大石板。
+    // 这套建筑会被放大十几到几十倍当巨构用，所以每种材质都有两级纹样：跟着模型走的大纹样（瓦垄、石板、柱身的节），
+    // 和只在走近时才浮出来的小纹样（小瓦、细缝）——放大以后近看不至于是一块光板
+    int k = int(vMat.w + 0.5);
+    float fw = max(fwU, fwV);
+    if (k == 0) {
+      float g = fbm3(P * 0.9), big = fbm3(P * vec3(0.05, 0.012, 0.05));
+      albedo = mix(vec3(0.205, 0.014, 0.016), vec3(0.305, 0.028, 0.024), big) * (0.88 + 0.24 * g);
+      rough = 0.24 + 0.2 * g;
+      bumpH = g; bumpK = 0.03;
+      if (vMat.z > 0.01) {
+        // 柱身一节一节的箍（参数 A = 每节高，模型单位）：细暗缝 + 每节深浅略有不同
+        float q = uv.y / vMat.z, fq = fwV / vMat.z;
+        float seam = (1.0 - smoothstep(0.012, 0.03 + fq * 1.2, 0.5 - abs(fract(q) - 0.5))) * (1.0 - smoothstep(0.25, 0.9, fq));
+        albedo *= (0.94 + 0.12 * hash21(vec2(floor(q), 5.0))) * (1.0 - 0.45 * seam);
+        rough = mix(rough, 0.6, seam);
+      }
+    } else if (k == 1) {
+      float g = fbm3(P * 1.1);
+      albedo = mix(vec3(0.034, 0.021, 0.015), vec3(0.082, 0.052, 0.035), g);
+      rough = 0.46 + 0.22 * g;
+      if (vMat.z < 0.5) {
+        // uv.x 以瓦垄为单位，uv.y 自檐口向上
+        float fadeF = 1.0 - smoothstep(0.2, 0.65, fwU), fadeS = 1.0 - smoothstep(0.2, 0.65, fwU * 8.0);
+        float rib = cos(uv.x * 6.2831853), rib2 = cos(uv.x * 50.265482);
+        float course = smoothstep(0.40, 0.5, abs(fract(uv.y) - 0.5)) * (1.0 - smoothstep(0.2, 0.6, fwV));
+        float course2 = smoothstep(0.36, 0.5, abs(fract(uv.y * 8.0) - 0.5)) * (1.0 - smoothstep(0.2, 0.6, fwV * 8.0));
+        albedo *= 0.70 + 0.30 * rib * fadeF;
+        albedo *= 1.0 + 0.16 * rib2 * fadeS - 0.22 * course2;
+        albedo *= 1.0 - 0.30 * course;
+        slope.x = -sin(uv.x * 6.2831853) * 0.8 * fadeF - sin(uv.x * 50.265482) * 0.35 * fadeS;
+        slope.y = course * 0.4 + course2 * 0.25;
+        // 檐口：每垄一枚金瓦当，远了连成一道金线
+        float eave = 1.0 - smoothstep(0.62, 0.80, uv.y);
+        float cap = smoothstep(0.40, 0.30, length(vec2(fract(uv.x + 0.5) - 0.5, uv.y - 0.36)));
+        float gd = eave * mix(0.62, cap, fadeF);
+        albedo = mix(albedo, vec3(1.0, 0.72, 0.27), gd); metal = gd; rough = mix(rough, 0.28, gd);
+      }
+    } else if (k == 2) {
+      // 鎏金錾花：错行的鳞片纹，凹处发暗，零星嵌红绿宝珠。参数 A = 纹样密度（每模型单位几格）
+      float sA = max(vMat.z, 0.25);
+      vec2 q = uv * sA; q.x += 0.5 * mod(floor(q.y), 2.0);
+      vec2 c1 = fract(q) - 0.5;
+      float sc = length(c1 * vec2(1.0, 1.2));
+      float fd = 1.0 - smoothstep(0.15, 0.6, fw * sA);
+      float rim = smoothstep(0.52, 0.44, sc) - smoothstep(0.38, 0.30, sc);
+      float boss = smoothstep(0.17, 0.09, sc);
+      float relief = (rim * 0.8 + boss) * fd;
+      float g = fbm3(P * 2.0);
+      albedo = vec3(1.0, 0.72, 0.27) * (0.80 + 0.22 * g);
+      albedo *= mix(1.0, 0.50 + 0.62 * relief, fd * 0.9);
+      // 小一级的联珠地纹：放大几十倍以后走近才看得见
+      vec2 c3 = fract(q * 5.0) - 0.5; float fd3 = 1.0 - smoothstep(0.15, 0.6, fw * sA * 5.0);
+      albedo *= 1.0 - 0.22 * fd3 + 0.34 * fd3 * smoothstep(0.42, 0.28, length(c3));
+      float gem = step(0.84, hash21(floor(q))) * boss * fd;
+      albedo = mix(albedo, mix(vec3(0.02, 0.30, 0.22), vec3(0.50, 0.03, 0.03), step(0.5, hash21(floor(q) + 7.0))), gem);
+      metal = 1.0 - gem; rough = 0.22 + 0.18 * g + 0.18 * (1.0 - relief) * fd;
+      bumpH = relief * 1.6; bumpK = 0.22;
+    } else if (k == 3) {
+      // 米色石板：长方错缝的大板 + 近处才见的小缝。参数 A = 板宽（模型单位）
+      float sl = max(vMat.z, 0.5);
+      vec2 q = uv / vec2(sl * 1.6, sl); q.x += 0.5 * mod(floor(q.y), 2.0);
+      vec2 cell = fract(q), dd = min(cell, 1.0 - cell) * vec2(sl * 1.6, sl);
+      float seam = (1.0 - smoothstep(0.0, 0.02 * sl + fw * 0.8, min(dd.x, dd.y))) * (1.0 - smoothstep(0.25, 1.0, fw / sl));
+      vec2 c2 = fract(uv / (sl * 0.25)), d2 = min(c2, 1.0 - c2) * sl * 0.25;
+      float seam2 = (1.0 - smoothstep(0.0, 0.006 * sl + fw * 0.8, min(d2.x, d2.y))) * (1.0 - smoothstep(0.05, 0.22, fw / sl));
+      float h = hash21(floor(q)), g = fbm3(P * 0.7), st = fbm3(P * 0.045 + 3.0);
+      albedo = mix(vec3(0.60, 0.46, 0.27), vec3(0.78, 0.63, 0.40), h * 0.55 + g * 0.45);
+      albedo = mix(albedo, albedo * vec3(0.78, 0.76, 0.72), smoothstep(0.5, 0.8, st) * 0.5);
+      albedo *= (1.0 - 0.55 * seam) * (1.0 - 0.22 * seam2);
+      rough = 0.60 + 0.2 * g; bumpH = g * 0.5 - seam * 2.0 - seam2; bumpK = 0.03;
+    } else if (k == 4) {
+      // 白石台基：错缝砌块 + 顺墙的雨痕。参数 A = 块高（模型单位）
+      float sl = max(vMat.z, 0.3);
+      vec2 q = uv / vec2(sl * 2.0, sl); q.x += 0.5 * mod(floor(q.y), 2.0);
+      vec2 cell = fract(q), dd = min(cell, 1.0 - cell) * vec2(sl * 2.0, sl);
+      float seam = (1.0 - smoothstep(0.0, 0.02 * sl + fw * 0.8, min(dd.x, dd.y))) * (1.0 - smoothstep(0.25, 1.0, fw / sl));
+      float g = fbm3(P * 0.8), st = fbm3(P * vec3(0.10, 0.022, 0.10) + 5.0);
+      albedo = vec3(0.80, 0.77, 0.70) * (0.9 + 0.14 * g) * (0.95 + 0.08 * hash21(floor(q)));
+      albedo = mix(albedo, albedo * vec3(0.64, 0.65, 0.62), smoothstep(0.5, 0.85, st) * 0.5 * (1.0 - step(0.6, N.y)));
+      albedo *= 1.0 - 0.36 * seam;
+      rough = 0.5 + 0.25 * g; bumpH = g - seam * 2.0; bumpK = 0.03;
+    } else if (k == 5) {
+      // 檐口封板 / 额枋：暗红底上一排小金钉。参数 A = 钉距（模型单位）
+      float bh = max(vMat.z, 0.1);
+      vec2 q = uv / bh, c = fract(q) - 0.5;
+      float fd = 1.0 - smoothstep(0.15, 0.6, fw / bh);
+      float stud = smoothstep(0.25, 0.16, length(c));
+      float gd = mix(0.17, stud, fd);
+      albedo = mix(mix(vec3(0.11, 0.015, 0.014), vec3(0.18, 0.026, 0.022), fbm3(P * 0.8)), vec3(1.0, 0.72, 0.27), gd);
+      metal = gd; rough = mix(0.5, 0.28, gd);
+    } else {
+      // 斗拱带（7）：一攒一攒青绿相间的斗拱块，块边勾金线，块间是暗的。uv.x 一格 = 一攒，uv.y 0→1 一层；参数 A = 1 时错半格
+      float u = fract(uv.x + 0.5 * step(0.5, vMat.z)) - 0.5, v = uv.y - 0.5;
+      float fd = 1.0 - smoothstep(0.12, 0.5, fwU);
+      float eb = max(abs(u) / 0.37, abs(v) / 0.46);
+      float blk = 1.0 - smoothstep(0.90, 1.0, eb);
+      float gl = smoothstep(0.70, 0.78, eb) * blk;
+      vec3 base = mix(vec3(0.014, 0.115, 0.090), vec3(0.018, 0.055, 0.175), step(0.5, fract(floor(uv.x + 0.5 * step(0.5, vMat.z)) * 0.5)));
+      // 块里再分三小格（斗、升）：近了才见
+      float sub = smoothstep(0.42, 0.5, abs(fract(u * 3.0 + 0.5) - 0.5)) * (1.0 - smoothstep(0.1, 0.4, fwU * 3.0));
+      vec3 c = mix(vec3(0.010, 0.009, 0.010), base * (1.0 - 0.45 * sub), blk);
+      c = mix(c, vec3(1.0, 0.72, 0.27), gl * 0.9);
+      albedo = mix(vec3(0.06, 0.075, 0.07), c, fd); metal = gl * fd * 0.9; rough = mix(0.55, 0.3, gl * fd);
+      ao *= mix(0.8, 0.5 + 0.5 * blk, fd);
     }
   } else if (id == 8) {
     // 山岩：水平岩层 + 裂隙；朝上的面长草木
@@ -2713,6 +2826,13 @@ void main() {
       } else {
       if (fk == 3) { fl = mix(vec3(0.86, 0.62, 0.02), vec3(0.98, 0.80, 0.10), sp) * (0.8 + 0.3 * big); fl = mix(fl, leaf, smoothstep(0.55, 0.8, mid * 0.7 + (1.0 - sp) * 0.4) * 0.55); }
       else if (fk == 4) { float rows = 0.5 + 0.5 * sin((P.x * 0.6 - P.z * 0.8) * 0.22); fl = mix(leaf, mix(vec3(0.95, 0.66, 0.06), vec3(0.35, 0.18, 0.05), smoothstep(0.75, 0.9, sp)), smoothstep(0.3, 0.6, sp * 0.6 + rows * 0.45)); }
+      else if (fk == 7) {      // v2.2 花境草甸：草绿打底，夹粉紫、珊瑚粉、白的碎花斑；近处另有实例化的花株
+        vec3 grass = mix(vec3(0.085, 0.15, 0.04), vec3(0.20, 0.28, 0.075), mid) * (0.8 + 0.35 * big);
+        float drift = n3(P * 0.012 + 5.0);
+        vec3 fc = drift < 0.4 ? vec3(0.60, 0.26, 0.56) : drift < 0.62 ? vec3(0.88, 0.46, 0.44) : vec3(0.34, 0.30, 0.70);
+        fc = mix(fc, vec3(0.9, 0.88, 0.84), step(0.78, n3(P * 0.05 + 9.0)));
+        fl = mix(grass, fc * (0.8 + 0.2 * sp), smoothstep(0.60, 0.86, sp * 0.5 + mid * 0.6) * 0.75);
+      }
       else { vec3 rc = mix(vec3(0.45, 0.03, 0.05), vec3(0.75, 0.40, 0.48), step(0.62, big + (mid - 0.5) * 0.4)); fl = mix(leaf * 0.75, rc * (0.8 + 0.2 * sp), smoothstep(0.5, 0.85, sp * 0.45 + mid * 0.65) * 0.8); }
       albedo = mix(albedo, fl, upF);
       rough = mix(rough, 0.75, upF); flag = upF > 0.5 ? 1.0 : flag; trans = upF * 0.35; bumpK *= 1.0 - upF;
@@ -2731,6 +2851,11 @@ void main() {
       else if (fk == 3) albedo = mix(vec3(0.55, 0.02, 0.05), vec3(0.78, 0.06, 0.10), g * 0.6 + h * 0.4);
       else if (fk == 4) albedo = mix(vec3(0.88, 0.40, 0.55), vec3(0.97, 0.62, 0.72), g * 0.6 + h * 0.4);
       else if (fk == 5) albedo = mix(vec3(0.86, 0.85, 0.80), vec3(0.97, 0.96, 0.92), g);
+      else if (fk == 7) albedo = mix(vec3(0.16, 0.27, 0.05), vec3(0.34, 0.45, 0.11), g * 0.7 + h * 0.3);              // v2.2 柳、桦的嫩叶
+      else if (fk == 8) albedo = mix(vec3(0.52, 0.16, 0.50), vec3(0.80, 0.42, 0.70), g * 0.5 + h * 0.5);              // 毛地黄：粉紫
+      else if (fk == 9) albedo = mix(vec3(0.20, 0.17, 0.58), vec3(0.42, 0.36, 0.82), g * 0.5 + h * 0.5);              // 羽扇豆：蓝紫
+      else if (fk == 10) albedo = mix(vec3(0.90, 0.33, 0.30), vec3(0.98, 0.58, 0.52), g * 0.5 + h * 0.5);             // 虞美人：珊瑚粉
+      else if (fk == 11) albedo = mix(vec3(0.46, 0.42, 0.22), vec3(0.72, 0.66, 0.38), g);                             // 观赏草：麦秆色
       else albedo = mix(vec3(0.10, 0.22, 0.05), vec3(0.20, 0.34, 0.08), g);
       rough = fk == 2 ? 0.85 : 0.55; trans = fk == 2 ? 0.1 : 0.6;
     }
@@ -2738,6 +2863,10 @@ void main() {
     float g = n3(vec3(uv.x * 22.0, uv.y * 1.5, 0.5)), f = fbm3(P * 3.0);
     albedo = mix(vec3(0.07, 0.045, 0.03), vec3(0.20, 0.13, 0.085), g) * (0.8 + 0.4 * f);
     rough = 0.9; bumpH = g + f * 0.5; bumpK = 0.05;
+    if (vMat.z > 0.5) {      // v2.2 白桦：白树皮上横着的黑斑
+      float mk = smoothstep(0.62, 0.74, n3(vec3(uv.x * 5.0, uv.y * 3.2, vIP.y * 9.0))) * smoothstep(0.35, 0.6, n3(vec3(uv.x * 2.0, uv.y * 14.0, 3.0)));
+      albedo = mix(vec3(0.78, 0.77, 0.72) * (0.85 + 0.2 * f), vec3(0.06, 0.055, 0.05), mk); rough = 0.75;
+    }
   } else if (id == 11) {
     // 灯笼：白天是朱红纸面，入夜自发光
     float rib = 0.85 + 0.15 * cos(uv.x * 6.2831853 * 8.0);
@@ -3162,6 +3291,8 @@ uniform vec4 uCloudF;
 float cloudTopLite(vec2 xz) { vec4 w = textureLod(uWeather, xz * uCloudB.x + uWeatherOff, 0.0); return uCloudA.x * (0.8 + 0.4 * w.b) + smoothstep(uCloudF.x, uCloudF.y, w.r) * uCloudA.y * 0.8 + w.g * uCloudA.z * 0.3; }
 uniform vec2 uHalfRes; uniform float uFrame; uniform float uTime;
 uniform vec4 uSkyP;      // x 日面亮度倍率, y 月面亮度倍率, z 星光强度, w 月面角半径
+uniform vec4 uBigMoon;   // 昼月：xyz 方向, w 角半径（0 = 没有）
+uniform vec4 uBigMoonP;  // x 亮度
 uniform float uUseAO; uniform float uUseVol;
 
 float hash31(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
@@ -3249,6 +3380,25 @@ void main() {
       col += uMoonIllum * moonT * alb * (0.75 + 0.25 * zz) * edge * uSkyP.y;
     }
     col += uMoonIllum * moonT * (exp(-am * 60.0) * 0.6 + exp(-am * 14.0) * 0.05) * uSkyP.y * 0.02;
+    // 昼月（v2.2）：白天的月亮是“天光 + 月面反光”，暗的那半边就是天色本身，所以只做加法
+    if (uBigMoon.w > 0.0) {
+      float BR = uBigMoon.w, ab = safeacos(dot(rd, uBigMoon.xyz));
+      if (ab < BR) {
+        vec3 bu = normalize(cross(vec3(0.0, 1.0, 0.0), uBigMoon.xyz)), bv = cross(uBigMoon.xyz, bu);
+        vec2 q = vec2(dot(rd, bu), dot(rd, bv)) / sin(BR);
+        float zz = sqrt(max(1.0 - dot(q, q), 0.0));
+        vec3 mn = vec3(q, zz);
+        vec3 nW = bu * q.x + bv * q.y - uBigMoon.xyz * zz;
+        vec3 Lm = normalize(uSunDir - uBigMoon.xyz * 0.55 + vec3(0.0, 0.25, 0.0));      // 照亮月面的方向：跟着太阳走，但总留大半个亮面
+        float lam = smoothstep(-0.08, 0.42, dot(nW, Lm));
+        float maria = fbm3(mn * 2.1 + 11.0), crat = fbm3(mn * 7.0 + 3.0), fine = fbm3(mn * 23.0);
+        float ray = smoothstep(0.62, 0.9, fbm3(mn * 4.3 + 21.0));
+        float alb = mix(0.30, 1.0, smoothstep(0.34, 0.62, maria)) * (0.80 + 0.28 * crat) * (0.88 + 0.24 * fine) + 0.14 * ray;
+        float edge = smoothstep(BR, BR * 0.992, ab);
+        vec3 tint = mix(vec3(0.86, 0.92, 1.0), vec3(1.0, 0.97, 0.90), smoothstep(0.4, 0.75, maria));
+        col += uSunIllum * transLUT(camA, uBigMoon.xyz) * tint * (alb * lam * (0.72 + 0.28 * zz) * edge * uBigMoonP.x);
+      }
+    }
     // 星空（天空越暗越明显）
     float dark = saturate(1.0 - luma(col) * 14.0);
     if (dark > 0.0 && rd.y > -0.05 && uSkyP.z > 0.0) col += stars(rd) * uSkyP.z * dark * smoothstep(-0.05, 0.12, rd.y);
@@ -3812,6 +3962,7 @@ class Renderer {
       key: 0.28, expMin: 0.02, expMax: 30, expSpeed: 0.06, hiKey: 1.25,
       tint: [0.95, 1.0, 1.08], flare: 1.0,     // 白平衡：上午的阳光经过大气后偏暖，按它校成白色，晨昏自然更暖
       sunDisc: 420, moonDisc: 30, stars: 1.0, moonRadius: 0.014,
+      bigMoon: 0.24, bigMoonR: 0.165,      // 昼月：亮度（相对日光）、角半径（弧度，约 8.6°）
       taaBlend: 0.9, volBlend: 0.88, volKeep: 0.98, aoRadius: 0.085, aoStrength: 3.0,
       useAO: 1, useVol: 1, useShadow: 1,
     };
@@ -3964,7 +4115,8 @@ class Renderer {
     // ---- 延迟光照 + 体积合成 ----
     T.begin('lighting');
     this.lit.bind();
-    this.pLight.use().set(F).set({ uSkyP: [P.sunDisc, P.moonDisc, P.stars * (env.starVis === undefined ? 1 : env.starVis), P.moonRadius], uUseAO: P.useAO, uUseVol: P.useVol });
+    const bm = env.bigMoonDir || [0, 0, 1], bmK = P.bigMoon * (env.bigMoonK || 0);
+    this.pLight.use().set(F).set({ uSkyP: [P.sunDisc, P.moonDisc, P.stars * (env.starVis === undefined ? 1 : env.starVis), P.moonRadius], uBigMoon: [bm[0], bm[1], bm[2], bmK > 0 ? P.bigMoonR : 0], uBigMoonP: [bmK, 0, 0, 0], uUseAO: P.useAO, uUseVol: P.useVol });
     drawFS(gl);
     T.end();
 
@@ -4341,6 +4493,10 @@ class DayCycle {
     e.keyDir = useSun ? sunDir : moonDir; e.keyIllum = useSun ? sunIllum : moonIllum;
     e.sunEl = sunEl; e.moonEl = moonEl;
     e.night = smoothstep(5, -5, sunEl);
+    // v2.2 昼月：白天挂在航向尽头（正北略偏左，月门的方向）的一轮巨月，上午从云海里升起来、傍晚沉下去；
+    // 它是中段全程的“目标”（朝着它飞），也是天宫那一带画面里最大的一个形。晨昏与夜里没有它，夜里还是原来那轮小月
+    const bmUp = smoothstep(6.6, 8.0, t) * (1 - smoothstep(16.6, 17.7, t));
+    e.bigMoonDir = dirFrom(-21, lerp(-17, 21, bmUp)); e.bigMoonK = smoothstep(4, 12, sunEl);
     e.starVis = smoothstep(0, -8, sunEl);
     // 镜头光晕颜色随太阳高度变暖
     const warm = smoothstep(25, 0, sunEl);
@@ -5678,6 +5834,475 @@ function bannerGeo(w = 14, l = 120, red = true) {
 return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, reindeerGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
 })();
 
+// ---- world/tiangong.js ----
+__m['world/tiangong.js'] = (function () {
+// 云阙 · 天宫式建筑套件（v2.2，照着参考视频 1 做）
+// 这一套和 kit.js 里原来的殿、塔是两种手法：原来的是“青瓦朱柱的故宫式”，这一套是视频里的样子——
+//   深朱红的粗柱立在很高的鎏金莲座上、柱头一圈青绿金箍；褐黑的瓦顶，脊与檐口勾金线、檐口一排金瓦当、翼角挑得很高；
+//   白石台基、朱栏金顶、米色的大石板地面；层层叠叠的楼阁。
+// 所有部件按“米”做成 1 倍大小（人的尺度），用的时候放大十几到几十倍——材质里有两级纹样（见 shaders_scene.js 的材质 22），
+// 放大以后走近看仍然有小一级的东西。
+const { Geo } = __m['engine/mesh.js'];
+const { v3, lerp } = __m['engine/math.js'];
+const { MAT } = __m['render/shaders_scene.js'];
+const { sweepBar } = __m['world/kit.js'];
+
+const TG = MAT.TG;
+const prof = (a, s) => a * s + (1 - a) * s * s;
+
+// ---------- 屋顶（庑殿 / 攒尖） ----------
+// W×D 檐口尺寸；H 屋面总高；y 檐口高；up 翼角起翘；tile 瓦垄宽；sMax 只做到坡面的几成（上面被上一层压住的不做）；
+// top 是否做正脊/宝顶；lod 远景简模（只留屋面和脊）
+function tgRoof(g, o) {
+  const W = o.W, D = Math.min(o.D, o.W), H = o.H, y0 = o.y || 0, U = o.up === undefined ? H * 0.3 : o.up, tw = o.tile || 0.5, a = o.conc === undefined ? 0.34 : o.conc;
+  const nu = o.nu || 14, nv = o.nv || 6, lod = !!o.lod, sM = o.sMax || 1;
+  const lift = (c, s) => U * (1 - s) * (1 - s) * Math.pow(Math.abs(c), 3.2);
+  const slopeLen = Math.hypot(D / 2, H);
+  const front = (sg) => (u, v) => { const s = v * sM, xm = W / 2 - s * D / 2, c = u * 2 - 1; return [c * xm, y0 + H * prof(a, s) + lift(c, s), sg * D / 2 * (1 - s)]; };
+  const side = (sg) => (u, v) => { const s = v * sM, zm = D / 2 * (1 - s), c = u * 2 - 1; return [sg * (W / 2 - s * D / 2), y0 + H * prof(a, s) + lift(c, s), c * zm]; };
+  const uvF = (u, v, p) => [p[0] / tw, v * sM * slopeLen / (tw * 1.4)], uvS = (u, v, p) => [p[2] / tw, v * sM * slopeLen / (tw * 1.4)];
+  const aoF = (u, v) => 0.74 + 0.26 * v;
+  const ns = Math.max(4, Math.round(nu * D / W));
+  g.mat(TG, 1, 0, 1);
+  g.surf(nu, nv, front(1), { uv: uvF, ao: aoF });
+  g.surf(nu, nv, front(-1), { uv: uvF, ao: aoF, flip: true });
+  g.surf(ns, nv, side(1), { uv: uvS, ao: aoF, flip: true });
+  g.surf(ns, nv, side(-1), { uv: uvS, ao: aoF });
+  const th = o.thick || Math.max(0.26, Math.min(W, D * 2) * 0.016);
+  if (!lod) {
+    // 檐底：椽子，越往里越暗
+    const sIn = Math.min(0.42, sM), rf = o.rafter || 0.45;
+    const under = (fn) => (u, v) => { const p = fn(u, v * sIn / sM); return [p[0], p[1] - th, p[2]]; };
+    const aoU = (u, v) => lerp(0.60, 0.26, v), uvU = (u, v, p) => [p[0], p[2]];
+    g.mat(MAT.VERMILION, 0.55, rf, 1);
+    g.surf(nu, 2, under(front(1)), { uv: uvU, flip: true, ao: aoU });
+    g.surf(nu, 2, under(front(-1)), { uv: uvU, ao: aoU });
+    g.mat(MAT.VERMILION, 0.55, rf, 2);
+    g.surf(ns, 2, under(side(1)), { uv: uvU, ao: aoU });
+    g.surf(ns, 2, under(side(-1)), { uv: uvU, flip: true, ao: aoU });
+    // 檐口封板：暗红底一排金钉
+    const fascia = (fn, n, flip) => g.surf(n, 1, (u, v) => { const p = fn(u, 0); return [p[0], p[1] - th * (1 - v), p[2]]; }, { uv: (u, v, p) => [p[0] + p[2], v * tw], flip });
+    g.mat(TG, 0.9, tw, 5);
+    fascia(front(1), nu, false); fascia(front(-1), nu, true); fascia(side(1), ns, true); fascia(side(-1), ns, false);
+  }
+  // 垂脊：黑脊身上压一道金线，檐角一支上挑的金翘
+  const rh = o.ridgeH || Math.max(0.3, Math.min(W, D * 1.6) * 0.022), rw = rh * 0.8;
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const pts = [], n = lod ? 3 : 7;
+    for (let k = 0; k <= n; k++) { const s = sM * (1 - k / n); pts.push([sx * (W / 2 - s * D / 2), y0 + H * prof(a, s) + lift(1, s) + 0.02, sz * D / 2 * (1 - s)]); }
+    g.mat(TG, 0.9, 1, 1); sweepBar(g, pts, rw, rh * 0.8);
+    g.mat(MAT.GOLD, 1, 0, 0); sweepBar(g, pts.map(p => [p[0], p[1] + rh * 0.8, p[2]]), rw * 0.42, rh * 0.3);
+    if (!lod) {
+      const e = pts[pts.length - 1], d = v3.norm([sx, 0, sz]), tip = [];
+      for (let k = 0; k <= 3; k++) { const t = k / 3; tip.push([e[0] + d[0] * rh * 2.6 * t, e[1] + rh * (0.5 + 2.6 * t * t), e[2] + d[2] * rh * 2.6 * t]); }
+      sweepBar(g, tip, rw * 0.5, rh * 0.55);
+    }
+  }
+  if (o.top === false) return;
+  const yTop = y0 + H * prof(a, sM), Lr = W - D;
+  if (Lr > 0.5) {
+    // 正脊：黑脊 + 脊背金线 + 两头金鸱吻 + 正中宝珠
+    g.mat(TG, 0.9, 1, 1); g.box(0, yTop + rh * 0.6, 0, Lr + rw, rh * 1.3, rw * 1.1);
+    g.mat(MAT.GOLD, 1, 0, 0); g.box(0, yTop + rh * 1.35, 0, Lr + rw, rh * 0.22, rw * 0.5);
+    for (const sx of [-1, 1]) {
+      const pts = [];
+      for (let k = 0; k <= 6; k++) { const t = k / 6, ang = t * 1.9; pts.push([sx * (Lr / 2 + rw * 0.2 - Math.sin(ang) * rh * 1.5 * t), yTop + rh * 0.5 + (1 - Math.cos(ang)) * rh * 1.9 + t * rh * 1.0, 0]); }
+      sweepBar(g, pts, rw * 1.2, rh * 0.85, [0, 0, 1]);
+    }
+    const r = rh * 0.75;
+    g.lathe(0, yTop + rh * 1.4, 0, [[r * 0.9, 0], [r * 1.3, r * 0.5], [r * 0.6, r * 1.1], [r * 1.0, r * 1.9], [r * 0.5, r * 2.8], [0.001, r * 4.2]], 8);
+  } else {
+    // 攒尖：金刹（覆钵 + 相轮 + 尖）
+    g.mat(MAT.GOLD, 1, 0, 0);
+    const r = Math.max(0.3, W * 0.032);
+    g.lathe(0, yTop - r * 0.3, 0, [[r * 1.7, 0], [r * 2.0, r * 0.5], [r * 1.0, r * 1.2], [r * 1.35, r * 1.9], [r * 0.7, r * 2.6], [r * 1.15, r * 3.3], [r * 0.6, r * 4.0], [r * 0.95, r * 4.7], [r * 0.45, r * 5.4], [r * 0.75, r * 6.1], [r * 0.3, r * 6.9], [r * 0.16, r * 9.4], [0.001, r * 10.6]], lod ? 6 : 10);
+  }
+}
+
+// ---------- 鎏金莲座上的火焰瓣 ----------
+function petals(g, cx, yb, cz, o) {
+  const { n, rb, hp, w, lean, ph, gA } = o;
+  for (let i = 0; i < n; i++) {
+    const a = (i + ph) / n * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+    const fn = (u, v) => {
+      const wv = w * Math.pow(1 - v, 0.7) * (0.55 + 0.45 * Math.min(1, v / 0.25)), s = (u - 0.5) * wv;
+      const rr = rb + 0.12 * w * Math.sin(Math.PI * v) + lean * v * v * v - s * s / (2 * rb);
+      return [cx + ca * rr - sa * s, yb + hp * v, cz + sa * rr + ca * s];
+    };
+    const uv = (u, v) => [i * w + (u - 0.5) * w, hp * v];
+    g.mat(TG, 0.95, gA, 2);
+    g.surf(3, 5, fn, { uv, flip: true, ao: (u, v) => 0.6 + 0.4 * v });
+    g.surf(3, 5, fn, { uv, ao: () => 0.5 });
+  }
+}
+
+// ---------- 柱 ----------
+// 朱漆柱身；ornate：高高的鎏金莲座（座圈、钟形座身、两层火焰瓣）+ 柱头金箍与青绿带；否则只在柱脚柱头各一道金箍。
+// drum：柱身每节高（模型单位，0 = 不分节）
+function column(g, x, y0, z, r, h, o = {}) {
+  const seg = o.seg || 12, orn = !!o.ornate, bh = orn ? 3.3 * r : 0.55 * r, ch = orn ? 1.7 * r : 0.5 * r, gA = 2.2 / r;
+  g.mat(TG, 1, o.drum || 0, 0);
+  g.cyl(x, y0 + bh, z, r, r * 0.96, h - bh - ch, seg, { aoB: 0.72, aoT: 0.6, us: 6 });
+  if (orn) {
+    g.mat(TG, 0.9, 0.5 * r, 4); g.box(x, y0 + 0.14 * r, z, 3.6 * r, 0.28 * r, 3.6 * r, { aoB: 0.6 });
+    const L = (yy, pf, rm) => g.lathe(x, yy, z, pf, seg + 4, { us: 2 * Math.PI * rm });
+    g.mat(TG, 0.9, gA, 2);
+    L(y0, [[1.62 * r, 0.28 * r, 0.6], [1.70 * r, 0.42 * r, 0.85], [1.50 * r, 0.52 * r, 0.6], [1.56 * r, 0.80 * r, 0.9], [1.40 * r, 0.95 * r, 0.7]], 1.6 * r);
+    L(y0, [[1.40 * r, 0.95 * r, 0.6], [1.52 * r, 1.25 * r, 0.8], [1.44 * r, 1.8 * r, 0.85], [1.22 * r, 2.4 * r, 0.9], [1.07 * r, 2.9 * r, 0.85], [1.03 * r, 3.05 * r, 0.7]], 1.4 * r);
+    petals(g, x, y0 + 0.95 * r, z, { n: 12, rb: 1.52 * r, hp: 1.75 * r, w: 0.80 * r, lean: 0.34 * r, ph: 0, gA });
+    petals(g, x, y0 + 1.55 * r, z, { n: 12, rb: 1.37 * r, hp: 1.70 * r, w: 0.62 * r, lean: 0.18 * r, ph: 0.5, gA });
+    L(y0, [[1.03 * r, 3.05 * r, 0.6], [1.16 * r, 3.12 * r, 0.9], [1.16 * r, 3.24 * r, 0.9], [1.0 * r, 3.3 * r, 0.6]], 1.1 * r);
+    const yc = y0 + h - ch;
+    L(yc, [[0.97 * r, 0, 0.7], [1.12 * r, 0.08 * r, 0.9], [1.12 * r, 0.26 * r, 0.9], [1.0 * r, 0.32 * r, 0.7]], r);
+    g.mat(MAT.CAIHUA, 0.8, 1, 2); g.cyl(x, yc + 0.32 * r, z, 1.0 * r, 1.0 * r, 0.95 * r, seg);
+    g.mat(TG, 0.9, gA, 2);
+    L(yc + 1.27 * r, [[1.0 * r, 0, 0.7], [1.16 * r, 0.08 * r, 0.9], [1.2 * r, 0.3 * r, 0.9], [1.05 * r, 0.43 * r, 0.6]], r);
+  } else {
+    g.mat(MAT.GOLD, 0.9, 0, 0);
+    g.lathe(x, y0, z, [[1.4 * r, 0, 0.6], [1.45 * r, 0.2 * r, 0.9], [1.12 * r, 0.34 * r, 0.8], [1.08 * r, 0.55 * r, 0.7]], Math.max(6, seg - 2));
+    g.cyl(x, y0 + h - ch, z, r * 1.07, r * 1.07, ch * 0.6, Math.max(6, seg - 2));
+  }
+}
+
+// ---------- 朱栏金顶 ----------
+function railLine(g, x0, z0, x1, z1, y, o = {}) {
+  const h = o.h || 1.1, L = Math.hypot(x1 - x0, z1 - z0);
+  if (L < 0.3) return;
+  const n = Math.max(1, Math.round(L / (o.sp || 2.2))), ax = Math.abs(x1 - x0) > Math.abs(z1 - z0);
+  const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, t = 0.1;
+  g.mat(TG, 0.9, 0, 0);
+  g.box(cx, y + h, cz, ax ? L : t, t, ax ? t : L);
+  g.box(cx, y + h * 0.62, cz, ax ? L : t * 0.7, t * 0.7, ax ? t * 0.7 : L);
+  g.mat(TG, 0.7, 0, 0); g.box(cx, y + h * 0.3, cz, ax ? L : t * 0.5, h * 0.42, ax ? t * 0.5 : L);
+  for (let i = 0; i <= n; i++) {
+    const px = lerp(x0, x1, i / n), pz = lerp(z0, z1, i / n);
+    g.mat(TG, 0.9, 0, 0); g.box(px, y + h * 0.56, pz, 0.17, h * 1.12, 0.17);
+    g.mat(MAT.GOLD, 1, 0, 0); g.box(px, y + h * 1.12 + 0.07, pz, 0.22, 0.14, 0.22);
+  }
+}
+// 一段可以沿台沿排开的栏杆（长 len，沿 X，居中）
+function tgBalustradeGeo(len = 6) {
+  const g = new Geo(1024);
+  g.mat(TG, 0.9, 0.3, 4); g.box(0, 0.09, 0, len, 0.18, 0.5);
+  railLine(g, -len / 2, 0, len / 2, 0, 0.18, { sp: 2 });
+  return g;
+}
+
+// ---------- 白石台基（层层收进、每层压一道挑出的面石）+ 米色石板台面 + 踏步 + 栏杆 ----------
+function podium(g, W, D, H, tiers, inset, o = {}) {
+  const th = H / tiers, A = o.block || 0.45;
+  for (let t = 0; t < tiers; t++) {
+    const e = inset * (tiers - 1 - t), yb = t * th;
+    g.mat(TG, 1, A, 4);
+    g.box(0, yb + th * 0.42, 0, W + 2 * e, th * 0.84, D + 2 * e, { aoB: 0.62, skip: '-y' });
+    g.box(0, yb + th * 0.92, 0, W + 2 * e + 0.26, th * 0.16, D + 2 * e + 0.26);
+  }
+  g.mat(TG, 1, o.slab || 1.2, 3); g.box(0, H + 0.02, 0, W - 0.1, 0.04, D - 0.1, { skip: '-y' });
+  const sw = (o.stairW || 0) / 2;
+  if (sw > 0) {
+    const ns = Math.max(3, Math.round(H / 0.3)), sh = H / ns, tr = sh * 1.9;
+    g.mat(TG, 1, A, 4);
+    for (let i = 0; i < ns; i++) {
+      const d = (ns - i - 0.5) * tr, hh = (i + 1) * sh;
+      g.box(0, hh / 2, -(D / 2 + d), sw * 2, hh, tr, { aoB: 0.7, skip: '-y' });
+      if (o.stairs4) { g.box(0, hh / 2, D / 2 + d, sw * 2, hh, tr, { aoB: 0.7, skip: '-y' }); g.box(-(W / 2 + d), hh / 2, 0, tr, hh, sw * 2, { aoB: 0.7, skip: '-y' }); g.box(W / 2 + d, hh / 2, 0, tr, hh, sw * 2, { aoB: 0.7, skip: '-y' }); }
+    }
+  }
+  if (o.rail) {
+    const hw = W / 2 - 0.25, hd = D / 2 - 0.25, gap = sw > 0 ? sw + 0.1 : 0, g4 = o.stairs4 ? gap : 0;
+    railLine(g, -hw, -hd, -gap, -hd, H); railLine(g, gap, -hd, hw, -hd, H);
+    railLine(g, -hw, hd, -g4, hd, H); railLine(g, g4, hd, hw, hd, H);
+    for (const sx of [-1, 1]) { railLine(g, sx * hw, -hd, sx * hw, -g4, H); railLine(g, sx * hw, g4, sx * hw, hd, H); }
+  }
+}
+
+// 四面隔扇墙（uv.x 一格 = 一扇）
+function lattWalls(g, hx, hz, y0, y1, lx, lz) {
+  g.mat(TG, 0.8, 0, 6);
+  const q = (p0, p1, p2, p3, n) => g.quadP(p0, p1, p2, p3, [0, 0], [n, 0], [n, 1], [0, 1], [0.85, 0.85, 0.5, 0.5]);
+  q([-hx, y0, hz], [hx, y0, hz], [hx, y1, hz], [-hx, y1, hz], lx);
+  q([hx, y0, -hz], [-hx, y0, -hz], [-hx, y1, -hz], [hx, y1, -hz], lx);
+  q([hx, y0, hz], [hx, y0, -hz], [hx, y1, -hz], [hx, y1, hz], lz);
+  q([-hx, y0, -hz], [-hx, y0, hz], [-hx, y1, hz], [-hx, y1, -hz], lz);
+}
+// 一圈斗拱带：四面立板，uv.x 一格一攒（约 bw 宽），par 错半格；底面封一块暗板（从下面看不穿）
+function bracketRing(g, W, D, y0, y1, bw, par) {
+  const hx = W / 2, hz = D / 2, nx = Math.max(1, Math.round(W / bw)), nz = Math.max(1, Math.round(D / bw));
+  g.mat(TG, 0.75, par, 7);
+  const q = (p0, p1, p2, p3, n) => g.quadP(p0, p1, p2, p3, [0, 0], [n, 0], [n, 1], [0, 1], [0.6, 0.6, 0.85, 0.85]);
+  q([-hx, y0, hz], [hx, y0, hz], [hx, y1, hz], [-hx, y1, hz], nx);
+  q([hx, y0, -hz], [-hx, y0, -hz], [-hx, y1, -hz], [hx, y1, -hz], nx);
+  q([hx, y0, hz], [hx, y0, -hz], [hx, y1, -hz], [hx, y1, hz], nz);
+  q([-hx, y0, -hz], [-hx, y0, hz], [-hx, y1, hz], [-hx, y1, -hz], nz);
+  g.mat(MAT.WOOD, 0.3, 0, 0); g.quadP([-hx, y0, -hz], [hx, y0, -hz], [hx, y0, hz], [-hx, y0, hz]);
+}
+// 额枋（暗红金钉）一圈 + 斗拱层（青绿相间，两跳）
+function entablature(g, W, D, y, s = 1) {
+  g.mat(TG, 0.75, 0.42 * s, 5);
+  for (const sz of [-1, 1]) g.box(0, y - 0.42 * s, sz * D / 2, W + 0.5 * s, 0.84 * s, 0.5 * s);
+  for (const sx of [-1, 1]) g.box(sx * W / 2, y - 0.42 * s, 0, 0.5 * s, 0.84 * s, D + 0.5 * s);
+  bracketRing(g, W + 0.9 * s, D + 0.9 * s, y, y + 0.58 * s, 1.15 * s, 0);
+  bracketRing(g, W + 2.0 * s, D + 2.0 * s, y + 0.56 * s, y + 1.1 * s, 1.15 * s, 1);
+  return y + 1.1 * s;
+}
+
+// ---------- 殿：前后出廊的重檐庑殿 ----------
+function tgHallGeo(o = {}) {
+  const g = new Geo(16384);
+  const nx = o.nx || 9, nz = o.nz || 4, bay = o.bay || 4.4, ch = o.ch || 7.6, dbl = o.dbl !== false, lod = !!o.lod;
+  const W = nx * bay, D = nz * bay, pH = o.pH === undefined ? 2.7 : o.pH, ov = 3.3;
+  podium(g, W + 5.6, D + 5.6, pH, o.tiers || 3, 1.3, { stairW: bay * 3 - 0.8, rail: !lod });
+  const y0 = pH, cr = 0.46, seg = lod ? 6 : 12;
+  for (let i = 0; i <= nx; i++) for (const sz of [-1, 1]) column(g, -W / 2 + i * bay, y0, sz * D / 2, cr, ch, { seg });
+  for (let j = 1; j < nz; j++) for (const sx of [-1, 1]) column(g, sx * W / 2, y0, -D / 2 + j * bay, cr, ch, { seg });
+  // 殿身：前后各退一间出廊（进深不够四间的只退半间）
+  const hz = D / 2 - (nz >= 4 ? bay : bay * 0.5), hx = W / 2 - cr * 0.3;
+  lattWalls(g, hx, hz, y0, y0 + ch - 0.8, nx * 4, Math.round(2 * hz / bay * 4));
+  const yE = entablature(g, W, D, y0 + ch);
+  g.mat(MAT.WOOD, 0.35, 0, 0); g.box(0, y0 + ch + 0.05, 0, W + 0.4, 0.1, D + 0.4);      // 廊下的天花（不然从廊下抬头会看穿屋顶）
+  const We = W + 2 * ov, De = D + 2 * ov;
+  if (!dbl) {
+    tgRoof(g, { W: We, D: De, H: De * 0.36, y: yE, up: 1.7, tile: 0.5, nu: lod ? 10 : 28, nv: lod ? 3 : 7, lod });
+    return g;
+  }
+  // 下檐：坡到上层檐柱处升起约半个出跳
+  const D2 = Math.max(bay, D - 2 * bay), W2 = W - 2 * bay, run = (De - D2) / 2, sB = run / (De / 2), Hl = 0.5 * run / prof(0.34, sB);
+  tgRoof(g, { W: We, D: De, H: Hl, y: yE, up: 1.7, tile: 0.5, nu: lod ? 10 : 28, nv: lod ? 3 : 5, top: false, sMax: Math.min(1, sB + 0.05), lod });
+  // 上层：一圈矮隔扇 + 额枋斗拱 + 上檐
+  const yb = yE + 0.5 * run - 0.25, hU = 2.9;
+  lattWalls(g, W2 / 2, D2 / 2, yb, yb + hU, (nx - 2) * 4, Math.max(4, Math.round(D2 / bay * 4)));
+  if (!lod) for (let i = 0; i <= nx - 2; i++) for (const sz of [-1, 1]) { g.mat(TG, 1, 0, 0); g.cyl(-W2 / 2 + i * bay, yb, sz * D2 / 2, cr * 0.8, cr * 0.8, hU, 8, { aoT: 0.55 }); }
+  const yU = entablature(g, W2, D2, yb + hU + 0.84);
+  tgRoof(g, { W: W2 + 2 * ov, D: D2 + 2 * ov, H: (D2 + 2 * ov) * 0.40, y: yU, up: 1.9, tile: 0.5, nu: lod ? 10 : 24, nv: lod ? 3 : 8, lod });
+  return g;
+}
+
+// ---------- 楼阁（方塔）：层层收分，每层平坐朱栏、隔扇、金钉额枋、挑得很高的翼角 ----------
+function tgPagodaGeo(o = {}) {
+  const g = new Geo(16384);
+  const tiers = o.tiers || 7, w0 = o.w || 11, th = o.th || 4.7, taper = o.taper || 0.9, lod = !!o.lod, pH = o.pH === undefined ? 2.4 : o.pH;
+  if (pH > 0) podium(g, w0 + 9, w0 + 9, pH, 2, 1.4, { stairW: 4, rail: !lod, stairs4: true });
+  let y = pH, w = w0;
+  for (let t = 0; t < tiers; t++) {
+    const last = t === tiers - 1, hw = w / 2, bays = Math.max(2, Math.round(w / 3.4));
+    if (t > 0 && !lod) {
+      g.mat(TG, 0.7, 0.3, 5); g.box(0, y + 0.15, 0, w + 3.0, 0.3, w + 3.0);
+      const e = hw + 1.35;
+      railLine(g, -e, -e, e, -e, y + 0.3, { h: 1.0 }); railLine(g, -e, e, e, e, y + 0.3, { h: 1.0 });
+      railLine(g, -e, -e, -e, e, y + 0.3, { h: 1.0 }); railLine(g, e, -e, e, e, y + 0.3, { h: 1.0 });
+    }
+    lattWalls(g, hw, hw, y + 0.3, y + th - 0.8, bays * 3, bays * 3);
+    if (!lod) for (let i = 0; i <= bays; i++) for (const s of [-1, 1]) {
+      const q = -hw + i * w / bays;
+      column(g, q, y + 0.3, s * hw, 0.3, th - 0.3, { seg: 8 });
+      if (i > 0 && i < bays) column(g, s * hw, y + 0.3, q, 0.3, th - 0.3, { seg: 8 });
+    }
+    const yE = entablature(g, w, w, y + th, 0.8);
+    const ew = w + (last ? 6.6 : 5.8);
+    if (last) {
+      tgRoof(g, { W: ew, D: ew, H: ew * 0.52, y: yE, up: 1.9, tile: 0.45, nu: lod ? 4 : 12, nv: lod ? 3 : 8, lod });
+    } else {
+      const sB = 1 - (w * taper) / ew, H = ew * 0.36;
+      tgRoof(g, { W: ew, D: ew, H, y: yE, up: 1.55, tile: 0.45, nu: lod ? 4 : 12, nv: lod ? 2 : 4, top: false, sMax: Math.min(1, sB + 0.05), lod });
+      y = yE + H * prof(0.34, sB) - 0.15;
+    }
+    w *= taper;
+  }
+  return g;
+}
+
+// ---------- 门阙：两排四根莲座巨柱托起一座重檐门楼（视频里广场正中那座）。放大二三十倍就是登天阶顶的“南天门” ----------
+const TG_GATE = { xs: [-16, -6, 6, 16], zs: [-4.2, 4.2], r: 1.0, h: 14 };
+function tgGateGeo(o = {}) {
+  const g = new Geo(32768), lod = !!o.lod, { xs, zs, r, h } = TG_GATE;
+  for (const x of xs) for (const z of zs) column(g, x, 0, z, r, h, { ornate: !lod, drum: 0.62, seg: lod ? 8 : 16 });
+  // 额枋：柱头之间纵横拉通
+  g.mat(TG, 0.8, 0.7, 5);
+  for (const z of zs) g.box(0, h - 1.0, z, 34.4, 1.4, 0.9);
+  for (const x of xs) g.box(x, h - 1.0, 0, 0.9, 1.4, 8.4);
+  g.mat(TG, 0.6, 1.45, 5); g.box(0, h + 0.25, 0, 35.6, 0.5, 11.4);      // 门下的天花：暗红底、疏疏一格一枚金钉
+  bracketRing(g, 36.6, 12.4, h + 0.5, h + 1.45, 1.3, 0);
+  bracketRing(g, 38.2, 14.0, h + 1.42, h + 2.3, 1.3, 1);
+  // 下檐（通长的庑殿）
+  const yE = h + 2.3, We = 45, De = 20.5, W2 = 26, D2 = 9.8, run = (De - D2) / 2, sB = run / (De / 2), Hl = 0.5 * run / prof(0.34, sB);
+  tgRoof(g, { W: We, D: De, H: Hl, y: yE, up: 2.7, tile: 0.5, nu: lod ? 12 : 38, nv: lod ? 3 : 7, top: false, lod });
+  // 明间升起的上层
+  const yb = yE + 0.5 * run - 0.3, hU = Hl - 0.5 * run + 1.6;
+  lattWalls(g, W2 / 2, D2 / 2, yb, yb + hU, 24, 9);
+  if (!lod) for (let i = 0; i <= 6; i++) for (const sz of [-1, 1]) { g.mat(TG, 1, 0, 0); g.cyl(-W2 / 2 + i * W2 / 6, yb, sz * D2 / 2, 0.42, 0.42, hU, 8, { aoT: 0.55 }); }
+  const yU = entablature(g, W2, D2, yb + hU + 0.84);
+  tgRoof(g, { W: W2 + 7.4, D: D2 + 7.4, H: (D2 + 7.4) * 0.42, y: yU, up: 2.9, tile: 0.5, nu: lod ? 10 : 30, nv: lod ? 3 : 8, lod });
+  return g;
+}
+
+// ---------- 巨台：须弥座（上下出涩、中间束腰一圈金钉）+ 米色石板台面。直接按世界尺寸做，台面在局部 y = 0 ----------
+function tgPlatformGeo(W, D, o = {}) {
+  const g = new Geo(2048), H = o.H || 150, blk = o.block || 7;
+  const tier = [[0, 0.16, 6], [0.16, 0.34, -10], [0.34, 0.60, -26], [0.60, 0.78, -10], [0.78, 1.0, 4]];
+  tier.forEach(([a, b, ins], i) => {
+    if (i === 2) g.mat(TG, 0.75, H * 0.26 / 2, 5); else g.mat(TG, i < 2 ? 1 : 0.85, blk, 4);
+    g.box(0, -H * (a + b) / 2, 0, W + 2 * ins, H * (b - a), D + 2 * ins, { aoB: 0.7 });
+  });
+  g.mat(TG, 1, o.slab || 9, 3); g.box(0, -0.2, 0, W, 0.5, D, { skip: '-y' });      // 台面顶在 y = 0.05
+  return g;
+}
+
+// ---------- 台山：巨台底下一整块收分的素白台身，从云里一直砌到台面底下（布达拉宫那样的“山一样的台”）。顶面 W×D 在局部 y = 0，往下 H，四面各外倾 batter ----------
+function tgMassifGeo(W, D, H, batter = 0.12) {
+  const g = new Geo(1024), e = H * batter, hx = W / 2, hz = D / 2;
+  g.mat(MAT.MEGA, 0.9, 130, 1);
+  // 四面：uv = (沿墙的米数, 高度)，材质 19 的白墙变体会画出分缝、雨痕和人尺度的窗带
+  // 角上要闭合：每面的两端随高度一起外扩
+  const quad = (p0, p1, o0, o1) => g.surf(6, 8, (u, v) => { const k = 1 - v; const x = lerp(p0[0] + o0[0] * e * k, p1[0] + o1[0] * e * k, u), z = lerp(p0[1] + o0[1] * e * k, p1[1] + o1[1] * e * k, u); return [x, -H * k, z]; }, { uv: (u, v, p) => [Math.abs(p0[0] - p1[0]) > 1 ? p[0] : p[2], p[1]], ao: (u, v) => 0.7 + 0.3 * v });
+  quad([hx, -hz], [-hx, -hz], [1, -1], [-1, -1]);       // 南面（朝 -z）
+  quad([-hx, hz], [hx, hz], [-1, 1], [1, 1]);           // 北面
+  quad([hx, hz], [hx, -hz], [1, 1], [1, -1]);           // +x 面
+  quad([-hx, -hz], [-hx, hz], [-1, -1], [-1, 1]);       // -x 面
+  return g;
+}
+
+return { tgRoof, tgBalustradeGeo, tgHallGeo, tgPagodaGeo, TG_GATE, tgGateGeo, tgPlatformGeo, tgMassifGeo };
+})();
+
+// ---- world/garden.js ----
+__m['world/garden.js'] = (function () {
+// 云阙 · 花境套件（v2.2，照着参考视频 2：雾池、垂柳、白桦、成片的毛地黄 / 羽扇豆 / 虞美人与观赏草）
+// 都按“米”做成 1 倍大小；花草是实心的小模型（不走透明度），树叶走松针那套透明度
+const { Geo } = __m['engine/mesh.js'];
+const { v3, mulberry32, lerp } = __m['engine/math.js'];
+const { MAT } = __m['render/shaders_scene.js'];
+const { fbm } = __m['world/kit.js'];
+
+// 沿折线的圆管（树干、枝）
+function tube(g, pts, r0, r1, seg = 6) {
+  const n = pts.length, base = g.nv;
+  for (let i = 0; i < n; i++) {
+    const a = pts[Math.max(i - 1, 0)], b = pts[Math.min(i + 1, n - 1)], t = v3.norm(v3.sub(b, a));
+    let s = v3.cross(t, [0, 0, 1]); if (v3.len(s) < 1e-3) s = [1, 0, 0]; s = v3.norm(s);
+    const u = v3.cross(s, t), r = lerp(r0, r1, i / (n - 1));
+    for (let k = 0; k <= seg; k++) {
+      const ang = k / seg * Math.PI * 2, c = Math.cos(ang), sn = Math.sin(ang), nx = s[0] * c + u[0] * sn, ny = s[1] * c + u[1] * sn, nz = s[2] * c + u[2] * sn;
+      g.vert(pts[i][0] + nx * r, pts[i][1] + ny * r, pts[i][2] + nz * r, nx, ny, nz, k / seg, i * 0.8, 1);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) for (let k = 0; k < seg; k++) { const a = base + i * (seg + 1) + k, b = a + seg + 1; g.quad(a, b, b + 1, a + 1); }
+}
+const bez = (a, b, c, t) => [lerp(lerp(a[0], b[0], t), lerp(b[0], c[0], t), t), lerp(lerp(a[1], b[1], t), lerp(b[1], c[1], t), t), lerp(lerp(a[2], b[2], t), lerp(b[2], c[2], t), t)];
+
+// 垂柳：歪一点的树干、七八根向外拱出去的大枝、枝上垂下一挂一挂的柳条（每挂两片交叉的长叶片）
+function willowGeo(seed = 1) {
+  const rnd = mulberry32(seed * 131 + 7), trunk = new Geo(1024), leaves = new Geo(2048);
+  trunk.mat(MAT.BARK, 1, 0, 0);
+  const lean = (rnd() - 0.5) * 1.6, top = [lean, 7.4 + rnd() * 1.2, (rnd() - 0.5) * 1.2];
+  tube(trunk, [[0, -0.6, 0], [lean * 0.25, 2.4, 0.1], [lean * 0.7, 5.2, top[2] * 0.6], top], 0.62, 0.34, 7);
+  leaves.mat(MAT.FOLIAGE, 0.9, 0.9, 7);
+  const nL = 7 + Math.floor(rnd() * 3);
+  for (let i = 0; i < nL; i++) {
+    const a = (i + rnd() * 0.6) / nL * Math.PI * 2, R = 5.2 + rnd() * 2.6, dir = [Math.cos(a), 0, Math.sin(a)], side = [-dir[2], 0, dir[0]];
+    const p1 = [top[0] + dir[0] * R * 0.45, top[1] + 3.2 + rnd() * 1.6, top[2] + dir[2] * R * 0.45], p2 = [top[0] + dir[0] * R, top[1] + 0.6 + rnd() * 1.4, top[2] + dir[2] * R];
+    const limb = []; for (let k = 0; k <= 5; k++) limb.push(bez(top, p1, p2, k / 5));
+    tube(trunk, limb, 0.17, 0.045, 5);
+    for (let k = 0; k < 6; k++) {
+      const L = bez(top, p1, p2, 0.3 + 0.7 * (k + rnd() * 0.5) / 6), len = 4.6 + rnd() * 4.2, w = 1.5 + rnd() * 0.8, sw = 0.5 + rnd() * 0.9;
+      const B = [L[0] + dir[0] * sw, Math.max(0.5, L[1] - len), L[2] + dir[2] * sw];
+      for (const ax of [side, dir]) {
+        leaves.quadP([L[0] - ax[0] * w / 2, L[1] + 0.3, L[2] - ax[2] * w / 2], [L[0] + ax[0] * w / 2, L[1] + 0.3, L[2] + ax[2] * w / 2], [B[0] + ax[0] * w * 0.4, B[1], B[2] + ax[2] * w * 0.4], [B[0] - ax[0] * w * 0.4, B[1], B[2] - ax[2] * w * 0.4]);
+      }
+    }
+  }
+  // 树冠顶上几团
+  for (let i = 0; i < 6; i++) { const a = rnd() * 6.283, d = rnd() * 2.6, x = top[0] + Math.cos(a) * d, z = top[2] + Math.sin(a) * d, y = top[1] + 2.2 + rnd() * 1.8, s = 2.2 + rnd();
+    leaves.quadP([x - s, y - s * 0.6, z], [x + s, y - s * 0.6, z], [x + s, y + s * 0.6, z], [x - s, y + s * 0.6, z]); leaves.quadP([x, y - s * 0.6, z - s], [x, y - s * 0.6, z + s], [x, y + s * 0.6, z + s], [x, y + s * 0.6, z - s]); }
+  return { trunk, leaves };
+}
+
+// 白桦：细高的白树干（材质里画黑斑）、稀疏的浅绿树冠
+function birchGeo(seed = 1) {
+  const rnd = mulberry32(seed * 57 + 3), trunk = new Geo(512), leaves = new Geo(1024);
+  trunk.mat(MAT.BARK, 1, 1, 0);
+  const h = 11 + rnd() * 4, bx = (rnd() - 0.5) * 1.4, bz = (rnd() - 0.5) * 1.4;
+  const at = (t) => [bx * t * t, h * t - 0.4, bz * t * t];
+  tube(trunk, [at(0), at(0.3), at(0.6), at(0.85), at(1)], 0.2, 0.05, 6);
+  leaves.mat(MAT.FOLIAGE, 0.9, 1.0, 7);
+  for (let i = 0; i < 12; i++) {
+    const t = 0.45 + 0.55 * rnd(), c = at(t), a = rnd() * 6.283, d = (1 - t) * 2.6 + rnd() * 1.2, x = c[0] + Math.cos(a) * d, z = c[2] + Math.sin(a) * d, y = c[1] + (rnd() - 0.3) * 1.2, s = 1.5 + rnd() * 1.1;
+    if (i % 3 === 0) tube(trunk, [c, [(c[0] + x) / 2, c[1] + 0.5, (c[2] + z) / 2], [x, y, z]], 0.04, 0.015, 4);
+    leaves.quadP([x - s, y - s * 0.7, z], [x + s, y - s * 0.7, z], [x + s, y + s * 0.7, z], [x - s, y + s * 0.7, z]); leaves.quadP([x, y - s * 0.7, z - s], [x, y - s * 0.7, z + s], [x, y + s * 0.7, z + s], [x, y + s * 0.7, z - s]);
+  }
+  return { trunk, leaves };
+}
+
+// 一丛穗状花（毛地黄 / 羽扇豆）。v2.2 第一版是“茎顶一只纺锤”，近看就是一根粉色的锥子——照园林那条片子的教训（整簇的团近看发平，要一朵一朵做）重写：
+// 每根花茎上自下而上螺旋排十几朵小花，每朵是两片交叉、朝外下垂的花瓣片（毛地黄的钟形花），越往上越小，顶上几朵是没开的绿苞。kind：花色（材质 9 的参数 B）
+function spireClumpGeo(kind = 8, seed = 1) {
+  const g = new Geo(2048), rnd = mulberry32(seed * 29 + kind);
+  for (let i = 0; i < 4; i++) {
+    const x = (rnd() - 0.5) * 0.9, z = (rnd() - 0.5) * 0.9, h = 0.45 + rnd() * 0.4, s = 0.8 + rnd() * 0.5, L = 0.95 * s, n = 13, lean = (rnd() - 0.5) * 0.12;
+    g.mat(MAT.FOLIAGE, 1, 0.7, 6); g.cyl(x, 0, z, 0.016, 0.008, h + L, 4);
+    for (let j = 0; j < n; j++) {
+      const t = j / (n - 1), y = h + t * L, a = j * 2.4 + seed, c = Math.cos(a), sn = Math.sin(a), w = lerp(0.062, 0.02, t) * s, len = lerp(0.15, 0.05, t) * s, dr = len * 0.55;
+      const px = x + lean * t, ox = px + c * len, oz = z + sn * len;
+      g.mat(MAT.FOLIAGE, 1, 0.95, t > 0.82 ? 6 : kind);
+      g.quadP([px - sn * w, y, z + c * w], [px + sn * w, y, z - c * w], [ox + sn * w * 1.5, y - dr, oz - c * w * 1.5], [ox - sn * w * 1.5, y - dr, oz + c * w * 1.5]);
+      g.quadP([px, y + w, z], [px, y - w, z], [ox, y - dr - w * 1.5, oz], [ox, y - dr + w * 1.5, oz]);
+    }
+  }
+  g.mat(MAT.FOLIAGE, 0.8, 0.6, 6);
+  for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + rnd(), c = Math.cos(a), s = Math.sin(a), L = 0.38 + rnd() * 0.22; g.quadP([0, 0.02, 0], [c * L * 0.5 - s * 0.13, 0.2, s * L * 0.5 + c * 0.13], [c * L, 0.1, s * L], [c * L * 0.5 + s * 0.13, 0.2, s * L * 0.5 - c * 0.13]); }
+  return g;
+}
+// 一丛虞美人：细茎顶着五片往上张开的薄花瓣，花心一点深色
+function poppyClumpGeo(seed = 1) {
+  const g = new Geo(1024), rnd = mulberry32(seed * 43 + 5);
+  for (let i = 0; i < 5; i++) {
+    const x = (rnd() - 0.5) * 1.1, z = (rnd() - 0.5) * 1.1, h = 0.45 + rnd() * 0.45, s = 0.8 + rnd() * 0.5, a0 = rnd() * 6.283;
+    g.mat(MAT.FOLIAGE, 1, 0.7, 6); g.cyl(x, 0, z, 0.01, 0.008, h, 4);
+    g.mat(MAT.FOLIAGE, 1, 0.95, 10);
+    for (let k = 0; k < 5; k++) { const a = a0 + k * 1.2566, c = Math.cos(a), sn = Math.sin(a), w = 0.085 * s, r = 0.15 * s, up = 0.085 * s;
+      g.quadP([x - sn * w * 0.4, h, z + c * w * 0.4], [x + sn * w * 0.4, h, z - c * w * 0.4], [x + c * r + sn * w, h + up, z + sn * r - c * w], [x + c * r - sn * w, h + up, z + sn * r + c * w]); }
+    g.mat(MAT.FOLIAGE, 1, 0.6, 2); g.quadP([x - 0.03, h + 0.012, z - 0.03], [x + 0.03, h + 0.012, z - 0.03], [x + 0.03, h + 0.012, z + 0.03], [x - 0.03, h + 0.012, z + 0.03]);
+  }
+  return g;
+}
+// 一丛观赏草：十几片往外弯的细长叶
+function grassTuftGeo(seed = 1, kind = 11) {
+  const g = new Geo(512), rnd = mulberry32(seed * 71 + 11);
+  g.mat(MAT.FOLIAGE, 0.9, 0.9, kind);
+  for (let i = 0; i < 16; i++) {
+    const a = rnd() * 6.283, c = Math.cos(a), s = Math.sin(a), h = 0.7 + rnd() * 0.7, out = 0.25 + rnd() * 0.5, w = 0.03 + rnd() * 0.02, x = (rnd() - 0.5) * 0.3, z = (rnd() - 0.5) * 0.3;
+    g.quadP([x - s * w, 0, z + c * w], [x + s * w, 0, z - c * w], [x + c * out * 0.45 + s * w * 0.7, h * 0.7, z + s * out * 0.45 - c * w * 0.7], [x + c * out * 0.45 - s * w * 0.7, h * 0.7, z + s * out * 0.45 + c * w * 0.7]);
+    g.triP([x + c * out * 0.45 - s * w * 0.7, h * 0.7, z + s * out * 0.45 + c * w * 0.7], [x + c * out * 0.45 + s * w * 0.7, h * 0.7, z + s * out * 0.45 - c * w * 0.7], [x + c * out, h, z + s * out]);
+  }
+  return g;
+}
+
+// 花境的浮岛：缓坡起伏的草甸，中间挖三个连在一起的浅池（池底低于水面，池外的地面一律高于水面——水岸线是设计出来的，不靠碰运气）。
+// 返回 { geo, h(x,z), rim(a), water: 水面高度, pondR: 水面圆盘该有多大 }
+function gardenIsleGeo(r = 850, seed = 23) {
+  const g = new Geo(32768), WY = -3;
+  const rim = (a) => r * (0.82 + 0.28 * fbm(Math.cos(a) * 1.5 + seed * 3.1, seed * 1.7, Math.sin(a) * 1.5, 3));
+  const ponds = [[-90, 60, 250], [170, -40, 190], [330, 120, 120]];
+  const land = (x, z) => 4 + 20 * fbm(x * 0.0035 + seed, 2.3, z * 0.0035, 3) + 5 * fbm(x * 0.012, seed, z * 0.012, 2);
+  const hgt = (x, z) => {
+    let k = -9; for (const [px, pz, R] of ponds) k = Math.max(k, 1 - Math.hypot(x - px, z - pz) / R);
+    const s = Math.min(1, Math.max(0, (k + 0.28) / 0.5)), ss = s * s * (3 - 2 * s);
+    return lerp(land(x, z), -10 - 4 * Math.max(0, k), ss);
+  };
+  const h = (x, z) => { const d = Math.hypot(x, z) / rim(Math.atan2(z, x)); return hgt(x, z) * (1 - Math.pow(Math.min(1, d), 6)); };
+  g.mat(MAT.ROCK, 1, 1.0, 7);
+  g.surf(128, 40, (u, v) => { const a = u * Math.PI * 2, rr = rim(a) * v, x = Math.cos(a) * rr, z = Math.sin(a) * rr; return [x, hgt(x, z) * (1 - Math.pow(v, 6)), z]; }, { uv: (u, v) => [u * 40, v * 12] });
+  g.mat(MAT.ROCK, 1, 0.15, 0);
+  g.surf(96, 22, (u, v) => {
+    const a = u * Math.PI * 2, n = fbm(Math.cos(a) * 2.1 + seed, v * 3.0 + seed, Math.sin(a) * 2.1, 4), sp = fbm(Math.cos(a) * 5.0 + seed * 2, 0.5, Math.sin(a) * 5.0, 2);
+    const rr = rim(a) * Math.pow(1 - v, 0.7 + sp * 0.6) * (0.75 + 0.5 * n) + 0.01;
+    return [Math.cos(a) * rr, -v * r * 0.75 * (0.6 + 0.8 * sp), Math.sin(a) * rr];
+  }, { uv: (u, v) => [u * 60, v * 20], ao: (u, v) => 1 - 0.45 * v });
+  return { geo: g, h, rim, water: WY, pondR: 530 };
+}
+
+return { willowGeo, birchGeo, spireClumpGeo, poppyClumpGeo, grassTuftGeo, gardenIsleGeo };
+})();
+
 // ---- world/world.js ----
 __m['world/world.js'] = (function () {
 // 云阙 · 世界布局：七处奇观沿朝圣之路依次展开
@@ -5685,12 +6310,15 @@ __m['world/world.js'] = (function () {
 const { Geo, makeBatch } = __m['engine/mesh.js'];
 const { m4, v3, mulberry32, lerp, DEG } = __m['engine/math.js'];
 const K = __m['world/kit.js'];
+const TK = __m['world/tiangong.js'];
+const GK = __m['world/garden.js'];
 const { meshGeo } = __m['render/assets.js'];
 const MAT = K.MAT;
 const inForest = (x, z, m = 0) => (Math.abs(x - K.FOREST.cx) < K.FOREST.x1 + 160 + m && z > K.FOREST.gz - 260 - m && z < K.FOREST.z1 + 160 + m)
   || (Math.abs(x - K.MIRROR.cx) < K.MIRROR.w / 2 + 1600 + m && z > K.MIRROR.z0 - 1200 - m && z < K.MIRROR.z1 + 300 + m)
   || (Math.abs(Math.hypot(x - K.ARC.cx, z - K.ARC.cz) - K.ARC.R) < 700 + m && Math.atan2(z - K.ARC.cz, x - K.ARC.cx) > K.ARC.a0 - 0.12 && Math.atan2(z - K.ARC.cz, x - K.ARC.cx) < K.ARC.a1 + 0.12)
-  || (x > K.WALLHALL.x - K.WALLHALL.depth - 300 - m && x < K.WALLHALL.x + 3300 + m && z > K.WALLHALL.z0 - 300 - m && z < K.WALLHALL.z1 + 300 + m);      // v1.0 的新建筑占了的地方：原来的散点石峰只在标题画面里出现
+  || (x > K.WALLHALL.x - K.WALLHALL.depth - 300 - m && x < K.WALLHALL.x + 3300 + m && z > K.WALLHALL.z0 - 300 - m && z < K.WALLHALL.z1 + 300 + m)
+  || (z > 9000 - m && z < 37200 + m);      // v2.2：中段（天柱以北到鲲渊以南）的零散石峰和小浮岛在启程后全部撤掉——几百米的小件散在几公里的巨构之间，只会把巨构衬成模型；标题画面里它们还在      // v1.0 的新建筑占了的地方：原来的散点石峰只在标题画面里出现
 
 const T = (x, y, z, yaw = 0, s = 1) => m4.trs(m4.create(), x, y, z, yaw, s);
 const TS = (x, y, z, yaw, sx, sy, sz) => m4.trs(m4.create(), x, y, z, yaw, sx, sy, sz);
@@ -5872,7 +6500,21 @@ function buildWorld(gl, onProgress = () => {}) {
     const F = K.FOREST, SM = K.SUMEN, rp = mulberry32(909), H = 3700, cols = [], n0 = W.batches.length;
     // 素门
     add(K.sumenGeo(), [T(F.cx, 0, F.gz, 0)], { name: 'S.gate', feature: 1500 });
-    col({ t: 'gatewall', z: F.gz, th: SM.TH / 2 + 10, x0: F.cx - SM.W / 2, x1: F.cx + SM.W / 2, y1: SM.yT + 40, c: [F.cx, SM.yc], R: SM.R, grp: 'forest' });
+    // v2.2 素门两翼：原来这块石屏只有 2.8 公里宽，孤零零立在云上像一只盒子。现在向西接 7.6 公里、向东接 6.2 公里，成了一道横贯天际的素墙——
+    // 和开场的天门、终点的月门长墙是同一种句法（一道占满地平线的墙 + 正中一个圆门），全程因此分成“三重门”。
+    // 墙把后面的登天阶挡在下面，只让天宫的屋顶和昼月从墙头露出来（主题乐园里“越过围墙看见城堡尖”的做法）
+    const SWW = 7600, SWE = 6200;
+    { const wg = new Geo(), yB = SM.yB, yT = SM.yT, cy = (yB + yT) / 2, x0 = F.cx - SM.W / 2, x1 = F.cx + SM.W / 2;
+      wg.mat(MAT.MEGA, 1, 140, 1);
+      wg.box(x0 - SWW / 2, cy, 0, SWW, yT - yB, SM.TH, { skip: '+x-y' }); wg.box(x1 + SWE / 2, cy, 0, SWE, yT - yB, SM.TH, { skip: '-x-y' });
+      // 扶壁：每 760 米一道，朝来路凸出 70 米。长墙有了节奏，斜着看才读得出透视和长度
+      for (let x = x0 - 380; x > x0 - SWW + 100; x -= 760) wg.box(x, cy - 120, -SM.TH / 2 - 35, 96, yT - yB - 240, 70, { skip: '-y' });
+      for (let x = x1 + 380; x < x1 + SWE - 100; x += 760) wg.box(x, cy - 120, -SM.TH / 2 - 35, 96, yT - yB - 240, 70, { skip: '-y' });
+      wg.mat(MAT.STONE, 1, 12, 0);
+      for (const [xc, L] of [[x0 - SWW / 2, SWW], [x1 + SWE / 2, SWE]]) { wg.box(xc, yT + 6, 0, L, 12, SM.TH + 50, { aoB: 0.5 }); wg.box(xc, 900, 0, L, 10, SM.TH + 26, { aoB: 0.5 });
+        wg.push(m4.translate(m4.create(), xc, 0, 0)); K.addHipRoof(wg, { W: L, D: SM.TH + 110, H: 34, y: yT + 12, up: 0, tile: 4.2, nu: 60, nv: 4, thick: 3, rafter: 3, ridgeH: 6 }); wg.pop(); }
+      add(wg, [T(0, 0, F.gz, 0)], { name: 'S.wings', feature: 1500 }); }
+    col({ t: 'gatewall', z: F.gz, th: SM.TH / 2 + 10, x0: F.cx - SM.W / 2 - SWW, x1: F.cx + SM.W / 2 + SWE, y1: SM.yT + 40, c: [F.cx, SM.yc], R: SM.R, grp: 'forest' });
     // 柱林
     const nx = Math.floor((F.x1 - F.lane) / F.sp) + 1, nz = Math.floor((F.z1 - F.z0) / F.sp) + 1;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) for (const sx of [-1, 1]) {
@@ -6087,8 +6729,9 @@ function buildWorld(gl, onProgress = () => {}) {
     }
     add(P.stair, st, { name: 'D.stairs', feature: 300, deform: 5, deformP: [K.STEP_H, 0.22, 0.45, 0] });
     // 牌楼：每四段一座，跨在平台上；越往上越近天宫
-    { const pf = [];
+    { const pf = [], cP = W.colliders.length;
       lands.forEach((m, i) => { if (i % 4 === 1 && i < runs - 1) { pf.push(T(dx, m[13], m[14], 0)); obb([dx, m[13] + 150, m[14]], [250, 26, 30]); for (const sx of [-1, 1]) obb([dx + sx * 131, m[13] + 104, m[14]], [72, 22, 12]); for (const x of [-190, -72, 72, 190]) col({ t: 'cyl', c: [dx + x, m[14]], r: 12, y0: m[13] - 10, y1: m[13] + 160 }); } });
+      for (let i = cP; i < W.colliders.length; i++) W.colliders[i].grp = 'preF';      // v2.2：旧牌楼只留给标题画面
       add(P.paifang, pf, { name: 'D.paifang', feature: 120 }); }
     const lg = new Geo(); lg.mat(MAT.STONE, 1, 10, 0); lg.box(0, -20, 0, 456, 40, land); lg.mat(MAT.PAVING, 1, 6, 0); lg.box(0, 0.5, 0, 420, 1, land, { skip: '-y' });
     add(lg, lands, { name: 'D.landings', feature: 200 });
@@ -6127,12 +6770,74 @@ function buildWorld(gl, onProgress = () => {}) {
       for (let k = 0; k < 7; k++) for (const sx of [-1, 1]) sh.push(T(dx + sx * 690, ty + 1, tz - 420 + k * 130, sx > 0 ? -Math.PI / 2 : Math.PI / 2, 3.4));
       lands.forEach((m, i) => { if (i % 3 === 2 && i < runs - 1) for (const sx of [-1, 1]) tw2.push(T(dx + sx * 172, m[13], m[14], 0, 3.6)); });
       add(P.hallS, sh, { name: 'D.sideHalls', feature: 50, maxDist: 14000 }); add(P.tower5, tw2, { name: 'D.stairTowers', feature: 60, maxDist: 16000 }); }
+    const cOld = W.colliders.length;
     obb([dx, ty - 160, tz], [750, 160, 550]); obb([dx, ty + 330, tz + 120], [470, 340, 300]);
     obb([dx - 560, ty + 350, tz - 300], [95, 350, 95]); obb([dx + 560, ty + 350, tz - 300], [95, 350, 95]);
+    for (let i = cOld; i < W.colliders.length; i++) W.colliders[i].grp = 'preF';
     const ln = []; for (let i = -6; i <= 6; i++) { if (i === 0) continue; ln.push(T(dx + i * 105, ty + 2, tz - 530, 0, 16)); }
     add(P.lantern, ln, { name: 'D.lanterns', feature: 20, maxDist: 16000 });
-    beacon('D', [dx, ty + 70, tz - 470], 16.2);
-    W.sites[3].pos = [dx, ty + 200, tz - 300];
+    // 旧的天宫（上面这几样）只留给标题画面——标题构图不动；点“启程”之后换成下面这一片
+    for (const b of W.batches) if (['D.podium', 'D.palace', 'D.que', 'D.sideHalls', 'D.lanterns', 'D.paifang', 'D.stairTowers'].includes(b.name)) b.grp = 'preF';
+    // =====================================================================
+    // v2.2 天宫（照参考视频 1 重做，建筑套件见 tiangong.js）。全程的中点、也是白天这一幕的高潮：
+    //   登天阶尽头先是一座“南天门”——八根立在鎏金莲座上的朱红巨柱（柱径五十多米、莲座八十多米高）托着重檐门楼，人从柱间穿过去；
+    //   门内是米色石板的广场，正北一座重檐大殿，两厢楼阁；殿后还有三排更高的楼阁各自立在悬空的白石台上，一排比一排远、一排比一排高，
+    //   最后一座通天阁正对着昼月。
+    // 布局只占登天阶正北一条两公里宽的地带：西边是雪原（低一千八百米），东边是镜台，都不碰
+    // =====================================================================
+    { const n1 = W.batches.length, c1 = W.colliders.length, FY = ty;
+      const T1 = { x: dx, z: 25300, w: 1560, d: 900 }, T2 = { x: dx, z: 26550, w: 1900, d: 1600 };
+      for (const t of [T1, T2]) { add(TK.tgPlatformGeo(t.w, t.d, { H: 170 }), [T(t.x, FY, t.z, 0)], { name: 'D2.plat', feature: 900 }); obb([t.x, FY - 85, t.z], [t.w / 2, 85, t.d / 2]); }
+      // 台下的巨墩（素白，带人尺度的窗带）
+      // 台山：两级巨台底下各一整块收分的素白台身，从云里一直砌上来（不是几根墩子架着一块板——远看要是一座“山”，红金的殿阁是山顶的冠）
+      for (const t of [T1, T2]) { add(TK.tgMassifGeo(t.w - 20, t.d - 20, FY - 170 - 250, 0.11), [T(t.x, FY - 168, t.z, 0)], { name: 'D2.massif', feature: 1200 }); obb([t.x, (FY - 170) / 2, t.z], [t.w / 2 + 60, (FY - 170) / 2, t.d / 2 + 60]); }
+      // 南天门
+      const GS = 26, gz = 25300, gateG = TK.tgGateGeo();
+      add(gateG, [T(dx, FY, gz, 0, GS)], { name: 'D2.gate', feature: 500 });
+      for (const gx of TK.TG_GATE.xs) for (const gq of TK.TG_GATE.zs) col({ t: 'cyl', c: [dx + gx * GS, gz + gq * GS], r: 34, y0: FY, y1: FY + 14 * GS });
+      obb([dx, FY + 25.5 * GS, gz], [23.9 * GS, 11.5 * GS, 11.7 * GS]);
+      // 大殿
+      const HS = 18, hz0 = 26950;
+      add(TK.tgHallGeo({ nx: 11, nz: 5 }), [T(dx, FY, hz0, 0, HS)], { name: 'D2.hall', feature: 500 });
+      obb([dx, FY + 1.35 * HS, hz0], [27 * HS, 1.35 * HS, 13.8 * HS]); obb([dx, FY + 16.8 * HS, hz0], [23.5 * HS, 14.1 * HS, 6.6 * HS]);
+      // 楼阁：广场两厢四座；殿后三排各自立在悬台上
+      const pg7 = TK.tgPagodaGeo({ tiers: 7 }), pg5 = TK.tgPagodaGeo({ tiers: 5 }), pg9 = TK.tgPagodaGeo({ tiers: 9 });
+      const p7 = [], p5 = [], p9 = [], plats = [];
+      const putP = (list, x, y, z, s, H, yaw = 0) => { list.push(T(x, y, z, yaw, s)); obb([x, y + 1.2 * s, z], [11.4 * s, 1.2 * s, 11.4 * s]); obb([x, y + (2.4 + H) / 2 * s, z], [5.6 * s, (H - 2.4) / 2 * s, 5.6 * s]); };
+      const island = (x, y, z, w) => { plats.push([x, y, z, w]); obb([x, y - 65, z], [w / 2, 65, w / 2]); obb([x, (y - 130) / 2, z], [w * 0.36, (y - 130) / 2, w * 0.36]); };
+      for (const sx of [-1, 1]) { putP(p7, dx + sx * 770, FY, 25990, 12, 60.4); putP(p5, dx + sx * 790, FY, 26950, 9.5, 47.6); }
+      for (const sx of [-1, 1]) { island(dx + sx * 700, FY + 150, 28050, 640); putP(p7, dx + sx * 700, FY + 150, 28050, 16, 60.4); }
+      island(dx, FY + 300, 29100, 800); putP(p9, dx, FY + 300, 29100, 21, 73.2);
+      island(dx - 600, FY + 60, 30100, 700); putP(p7, dx - 600, FY + 60, 30100, 19, 60.4, 0.785);
+      island(dx + 1150, FY + 90, 29850, 700); putP(p7, dx + 1150, FY + 90, 29850, 18, 60.4, 0.785);
+      // 登天阶上的牌楼与阙楼也换成同一套：牌楼 → 小一号的门阙（第 2、6、10 个平台；最上面那个平台不再立，南天门就在眼前），阙楼 → 五层楼阁
+      { const gi = [], ti = [];
+        lands.forEach((m, i) => {
+          if (i % 4 === 1 && i < 12) { gi.push(T(dx, m[13], m[14], 0, 8)); for (const gx of TK.TG_GATE.xs) for (const gq of TK.TG_GATE.zs) col({ t: 'cyl', c: [dx + gx * 8, m[14] + gq * 8], r: 11, y0: m[13] - 10, y1: m[13] + 112 }); obb([dx, m[13] + 204, m[14]], [191, 92, 94]); }
+          if (i % 3 === 2 && i % 4 !== 1 && i < runs - 1) for (const sx of [-1, 1]) ti.push(T(dx + sx * 172, m[13], m[14], 0, 2.3));
+        });
+        add(gateG, gi, { name: 'D2.stairGates', feature: 150 }); add(pg5, ti, { name: 'D2.stairTowers', feature: 60, maxDist: 16000 }); }
+      add(pg7, p7, { name: 'D2.pagoda7', feature: 400 }); add(pg5, p5, { name: 'D2.pagoda5', feature: 300 }); add(pg9, p9, { name: 'D2.pagoda9', feature: 600 });
+      for (const [x, y, z, w] of plats) { add(TK.tgPlatformGeo(w, w, { H: 130, slab: 8 }), [T(x, y, z, 0)], { name: 'D2.isle', feature: 500 }); add(TK.tgMassifGeo(w * 0.66, w * 0.66, y - 130 - 250, 0.05), [T(x, y - 128, z, 0)], { name: 'D2.isleBody', feature: 600 }); }
+      // 台沿的朱栏（放大八倍；让开登天阶上来的那一段）
+      { const bi = [], BS = 8, seg = 48;
+        const edge = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / seg)), yaw = Math.abs(x1 - x0) > 1 ? 0 : Math.PI / 2; for (let i = 0; i < n; i++) { const t = (i + 0.5) / n; bi.push(TS(lerp(x0, x1, t), FY, lerp(z0, z1, t), yaw, L / n / 6, BS, BS)); } };
+        const a = T1.w / 2 - 4, b = T2.w / 2 - 4, zs = T1.z - T1.d / 2 + 4, zm = T1.z + T1.d / 2, zn = T2.z + T2.d / 2 - 4;
+        edge(dx - a, zs, dx - 250, zs); edge(dx + 250, zs, dx + a, zs);
+        for (const sx of [-1, 1]) { edge(dx + sx * a, zs, dx + sx * a, zm); edge(dx + sx * a, zm + 4, dx + sx * b, zm + 4); edge(dx + sx * b, zm + 4, dx + sx * b, zn); }
+        edge(dx - b, zn, dx + b, zn);
+        add(TK.tgBalustradeGeo(6), bi, { name: 'D2.rails', feature: 10, maxDist: 9000, shadow: false }); }
+      // 人尺度的参照：南天门内侧两座“正常大小”的殿（放大 1.6 倍，站在八十多米高的柱础旁边），御路两侧的灯
+      add(TK.tgHallGeo({ nx: 5, nz: 3, dbl: false }), [T(dx - 300, FY, 25700, Math.PI / 2, 1.6), T(dx + 300, FY, 25700, -Math.PI / 2, 1.6)], { name: 'D2.smallHalls', feature: 20, maxDist: 7000 });
+      for (const sx of [-1, 1]) obb([dx + sx * 300, FY + 17, 25700], [22, 17, 33]);
+      { const l2 = ln.slice(); for (let z = 25830; z < 26620; z += 158) for (const sx of [-1, 1]) l2.push(T(dx + sx * 190, FY + 2, z, 0, 16));
+        add(P.lantern, l2, { name: 'D2.lanterns', feature: 20, maxDist: 16000 }); }
+      grpOf(n1, 'forest'); for (let i = c1; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
+      W.tiangong = { c: [dx, FY, 26300], gate: [dx, FY, gz], T1, T2 };
+    }
+    beacon('D', [dx, ty + 70, 25900], 14.6);
+    W.beacons[W.beacons.length - 1].via = [[dx, ty + 250, 24900], [dx, ty + 200, 25640]];      // 自动巡航：先到阶顶上空，再从南天门正中穿过去
+    W.sites[3].pos = [dx, ty + 200, 25500];
   }
   onProgress(0.68);
 
@@ -6222,6 +6927,7 @@ function buildWorld(gl, onProgress = () => {}) {
     add(P.hallM, hm, { name: 'E.hall', feature: 100 }); add(P.hallS, hs, { name: 'E.hallS', feature: 60 });
     add(P.tower7, tw, { name: 'E.towers', feature: 80 }); add(P.pav, pv, { name: 'E.pavs', feature: 30 });
     beacon('E', [3000 - 210, 2300 + 345, 30500 - 120], 17.15);
+    W.beacons[W.beacons.length - 1].via = [[-2400, 3500, 26520], [1500, 2640, 28000]];      // v2.2 自动巡航：从天宫广场东厢两座楼阁之间出去
   }
   onProgress(0.78);
 
@@ -6560,6 +7266,82 @@ function buildWorld(gl, onProgress = () => {}) {
     grpOf(n0, 'forest');
   }
 
+  // =====================================================================
+  // v2.2 花境（照参考视频 2）：镜台与悬圃之间的一座大浮岛。岛上洼处积水成池、池边垂柳，一条碎石小路从岛这头蜿蜒到那头（过水处贴着水面），
+  //   路两边是成片的毛地黄、羽扇豆、虞美人与观赏草，高处几丛白桦，池边一座小水榭。可以落地（F）沿路走；花草放大两倍多（花穗比人高），飞着看也成片
+  // =====================================================================
+  {
+    const n0 = W.batches.length, c0 = W.colliders.length, gr = mulberry32(2202);
+    const GC = [1500, 2350, 27900], isl = GK.gardenIsleGeo(850, 23), YW = isl.water;
+    add(isl.geo, [T(GC[0], GC[1], GC[2], 0)], { name: 'V.isle', feature: 500 });
+    col({ t: 'ell', c: [GC[0], GC[1] - 300, GC[2]], r: [800, 330, 800], nowalk: true });
+    (W.walk || (W.walk = [])).push({ c: GC, h: (x, z) => Math.max(isl.h(x, z), YW), rim: isl.rim });
+    (W.waters || (W.waters = [])).push({ x0: GC[0] - 530, z0: GC[2] - 530, x1: GC[0] + 530, z1: GC[2] + 530, y: GC[1] + YW });
+    const inIsle = (x, z, k = 0.9) => Math.hypot(x, z) < isl.rim(Math.atan2(z, x)) * k;
+    const pathZ = (x) => 190 * Math.sin((x + 600) / 1200 * 5.6 + 0.6) + 60;
+    { const g = new Geo();
+      // 池：一张平的镜面水，地势低于它的地方就是水面，岸线自然
+      g.mat(MAT.WATER, 1, 0, 1); g.surf(48, 1, (u, v) => [Math.cos(u * 6.2832) * isl.pondR * v, YW, Math.sin(u * 6.2832) * isl.pondR * v]);
+      // 碎石小路
+      g.mat(MAT.PLASTER, 1, 0, 0);
+      g.surf(110, 1, (u, v) => { const x = lerp(-610, 610, u), z = pathZ(x) + (v - 0.5) * 5.2; return [x, Math.max(isl.h(x, z), YW) + 0.14, z]; }, { flip: true, uv: (u, v) => [u * 240, v] });
+      add(g, [T(GC[0], GC[1], GC[2], 0)], { name: 'V.pond', feature: 300, shadow: false }); }
+    const S = 2.2, sp = [[], [], []], pop = [], grs = [], grg = [], wil = [[], []], bir = [[], []];
+    const put = (x, z, sc) => T(GC[0] + x, GC[1] + isl.h(x, z) - 0.05, GC[2] + z, gr() * 6.283, sc);
+    for (let i = 0; i < 9000; i++) {
+      const x = lerp(-600, 600, gr()), off = (gr() - 0.5) * 2, z = pathZ(x) + Math.sign(off) * (4 + Math.abs(off) * Math.abs(off) * 62);
+      if (!inIsle(x, z)) continue;
+      const h = isl.h(x, z); if (h < YW + 0.25) continue;
+      const n1 = K.fbm(x * 0.006 + 3, 1.7, z * 0.006, 2), n2 = K.fbm(x * 0.014, 5.1, z * 0.014 + 2, 2), m = put(x, z, S * (0.8 + gr() * 0.5));
+      // 花色成片：毛地黄（粉紫）最多，羽扇豆（蓝紫）、白穗各占几片，虞美人只零星点缀，其间夹观赏草；水边以草为主
+      if (h < YW + 3 ? gr() < 0.6 : gr() < 0.16) (gr() < 0.5 ? grs : grg).push(m);
+      else if (gr() < 0.10) pop.push(put(x, z, S * (0.5 + gr() * 0.2)));
+      else if (n1 > 0.60) sp[1].push(m); else if (n1 < 0.38) sp[2].push(m); else (n2 > 0.66 ? sp[1] : sp[0]).push(m);
+    }
+    const trees = [];
+    for (let i = 0; i < 4000 && wil[0].length + wil[1].length < 28; i++) {      // 垂柳：只长在水边
+      const a = gr() * 6.283, d = Math.sqrt(gr()) * 620, x = Math.cos(a) * d, z = Math.sin(a) * d, h = isl.h(x, z);
+      if (h < YW + 0.5 || h > YW + 5 || Math.abs(z - pathZ(x)) < 9 || trees.some(t => Math.hypot(t[0] - x, t[1] - z) < 30)) continue;
+      trees.push([x, z]); wil[i % 2].push(put(x, z, 2.5 + gr() * 0.9));
+    }
+    for (let i = 0; i < 4000 && bir[0].length + bir[1].length < 46; i++) {      // 白桦：高处，三五成丛
+      const a = gr() * 6.283, d = Math.sqrt(gr()) * 700, x = Math.cos(a) * d, z = Math.sin(a) * d, h = isl.h(x, z);
+      if (!inIsle(x, z, 0.85) || h < 16.5 || Math.abs(z - pathZ(x)) < 8 || trees.some(t => Math.hypot(t[0] - x, t[1] - z) < 11)) continue;
+      trees.push([x, z]); bir[i % 2].push(put(x, z, 2.2 + gr() * 0.9));
+    }
+    [8, 9, 5].forEach((kind, k) => { if (sp[k].length) add(GK.spireClumpGeo(kind, k + 1), sp[k], { name: 'V.spire' + k, feature: 3, maxDist: 1700, twoSided: true, shadow: false }); });
+    if (pop.length) add(GK.poppyClumpGeo(1), pop, { name: 'V.poppy', feature: 3, maxDist: 1700, twoSided: true, shadow: false });
+    if (grs.length) add(GK.grassTuftGeo(1, 11), grs, { name: 'V.grassS', feature: 3, maxDist: 1700, twoSided: true, shadow: false });
+    if (grg.length) add(GK.grassTuftGeo(2, 6), grg, { name: 'V.grassG', feature: 3, maxDist: 1700, twoSided: true, shadow: false });
+    for (let k = 0; k < 2; k++) {
+      const w = GK.willowGeo(k + 1), b = GK.birchGeo(k + 1);
+      if (wil[k].length) { add(w.trunk, wil[k], { name: 'V.willowT', feature: 20, maxDist: 6000 }); add(w.leaves, wil[k], { name: 'V.willowL', alpha: true, twoSided: true, feature: 40, maxDist: 12000 }); }
+      if (bir[k].length) { add(b.trunk, bir[k], { name: 'V.birchT', feature: 10, maxDist: 4000 }); add(b.leaves, bir[k], { name: 'V.birchL', alpha: true, twoSided: true, feature: 25, maxDist: 9000 }); }
+    }
+    for (const t of trees) col({ t: 'cyl', c: [GC[0] + t[0], GC[2] + t[1]], r: 1.4, y0: GC[1] - 20, y1: GC[1] + isl.h(t[0], t[1]) + 14, nowalk: true });
+    // 水榭：路过水那一段的岸边
+    { let best = null; for (let x = -300; x < 300; x += 20) { const z = pathZ(x) + 26, h = isl.h(x, z); if (h > YW + 0.8 && h < YW + 6 && (!best || Math.abs(x) < Math.abs(best[0]))) best = [x, z, h]; }
+      if (best) { add(TK.tgHallGeo({ nx: 3, nz: 2, dbl: false, pH: 0.9, tiers: 1 }), [T(GC[0] + best[0], GC[1] + best[2] - 0.3, GC[2] + best[1], Math.PI, 1.4)], { name: 'V.pavilion', feature: 12, maxDist: 6000 }); obb([GC[0] + best[0], GC[1] + best[2] + 6, GC[2] + best[1]], [9, 7, 6]); } }
+    grpOf(n0, 'forest'); for (let i = c0; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
+    (W.scenic || (W.scenic = [])).push({ id: 'V1', name: '花境', sub: '雾池垂柳 · 一径穿花', en: 'THE MEADOW GARDEN', pos: [GC[0], GC[1] + 60, GC[2]], r: 900 });
+    W.garden = { c: GC, yw: YW };
+  }
+  // =====================================================================
+  // v2.2 天阙：云海尽头一圈通天的楼阁，每座三四公里高，立在一二十公里外、退在空气里。
+  //   它们是全程的“天际线”——原来云海四面都是空的，巨构像摆在一张无边的桌面上；有了远处这一圈，才有“身在其中”的围合，
+  //   也给眼前的东西一把尺子（近的清楚、远的发白）。只放在航线两侧的远处；鲲渊到月门那一段不放（结尾的画面不动）
+  // =====================================================================
+  {
+    const n0 = W.batches.length, c0 = W.colliders.length, ins = [];
+    // 都放在素门以北：开场与第一幕（黎明的天柱）的画面里没有它们；从第一幕望过去，只有塔尖从素门的墙头后面露出来
+    for (const [x, z, s, yaw] of [[-9800, 32500, 46, 0.4], [-12800, 36800, 58, 0.1], [-13500, 21500, 56, 0.6], [-15500, 28500, 62, 0.785],
+      [11800, 31500, 50, 0.3], [14200, 23500, 58, 0.7], [15500, 36500, 60, 0.15]]) {
+      ins.push(T(x, 240, z, yaw, s)); col({ t: 'cyl', c: [x, z], r: 6.4 * s, y0: -300, y1: 240 + 71 * s });
+    }
+    add(TK.tgPagodaGeo({ tiers: 9, lod: true, pH: 0 }), ins, { name: 'Z.towers', feature: 2500 });
+    grpOf(n0, 'forest'); for (let i = c0; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
+    (W.scenic || (W.scenic = [])).push({ id: 'D2', name: '天宫', sub: '南天门内 · 楼阁千重', en: 'THE CELESTIAL PALACE', pos: [-3400, 3600, 26300], r: 1300 });
+  }
   // ---------- 沿途的零散石峰与小浮岛（前景与视差） ----------
   {
     const pk = [], isl = [], pines = [], pkF = [], islF = [], pinesF = [];
@@ -6591,8 +7373,9 @@ function buildWorld(gl, onProgress = () => {}) {
   {
     const pts = [[0, 1560, 80], [-200, 1900, 3000], ...W.beacons.map(b => b.pos)];
     // 万廊一段特意从两座巨廊之间的“峡谷”里穿过去
-    const route = [pts[0], pts[1], W.beacons[1].pos, [1500, 1950, 11300], [2600, 1330, 12650], [2600, 1270, 14700], W.beacons[2].pos, [-1300, 1650, 15900], [-3400, 1520, 16300], [-3400, 1250, 18600], W.beacons[3].pos,      // v1.0：从万廊斜插到素门前，穿圆门、走千柱林的巷子上登天阶
-      [-700, 2560, 26300], [-700, 2500, 27900], W.beacons[4].pos, [-300, 2300, 33600], W.beacons[5].pos, [-2700, 2300, 42800], W.beacons[6].pos];
+    // v2.2 天宫一段：阶顶 → 穿南天门 → 广场 → 从东厢两座楼阁之间出去 → 镜台
+    const route = [pts[0], pts[1], W.beacons[1].pos, [1500, 1950, 11300], [2600, 1330, 12650], [2600, 1270, 14700], W.beacons[2].pos, [-1300, 1650, 15900], [-3400, 1520, 16300], [-3400, 1250, 18600], [-3400, 3470, 24860], W.beacons[3].pos, [-2440, 3480, 26500],      // v1.0：从万廊斜插到素门前，穿圆门、走千柱林的巷子上登天阶
+      [-700, 2560, 26850], [-700, 2500, 27700], [1500, 2480, 27960], W.beacons[4].pos, [-300, 2300, 33600], W.beacons[5].pos, [-2700, 2300, 42800], W.beacons[6].pos];
     for (let i = 0; i < route.length - 1; i++) {
       const a = route[i], b = route[i + 1], d = v3.dist(a, b), n = Math.max(2, Math.floor(d / 170));
       for (let k = 1; k < n; k++) {
@@ -7498,7 +8281,7 @@ const qs = new URLSearchParams(location.search);
 const SHOT = qs.get('shot') === '1';
 const store = { get(k, d) { try { const v = localStorage.getItem('yunque.' + k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem('yunque.' + k, v); } catch (e) { } } };
 
-const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 16.2, 17.15, 17.78, 19.3];
+const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 14.6, 17.15, 17.78, 19.3];      // v2.2：点亮登天阶之后由 16.2 改到 14.6——太阳高一些、从侧后方照过来，天宫的正面受光、檐下是硬阴影（参考视频 1 的光）；16.2 时殿的正面整片背光
 const VERSES = {
   A: ['第一盏 · 启明', '一灯既明，天光自东方来'], B: ['天柱', '柱擎青天，人行其下如尘'], C: ['万廊', '千柱无言，云从廊下过'],
   D: ['登天阶', '登阶万级，回首已是云端'], E: ['悬圃', '岛悬于空，松风不动'], F: ['鲲渊', '北冥有鱼，其名为鲲'], G: ['月门', '月出云阙，万灯皆明'],
@@ -7965,8 +8748,12 @@ function autoPilot(P, dt) {
   // v1.0：去登天阶时先绕到素门前、穿圆门、走千柱林的巷子
   const F = world.forest, toGate = b.id === 'D' && world.grp.forest && P.pos[2] < F.z1;
   const front = Math.abs(P.pos[0] - F.cx) < 320 && P.pos[2] > F.gz - 1350;
-  const t = !toGate ? b.flame : front ? [F.cx, 1350, F.z1 + 300] : [F.cx, 1520, F.gz - 1100], d = v3.sub(t, P.pos), dist = v3.len(d), hd = Math.hypot(d[0], d[2]);
-  const wantY = toGate ? t[1] : hd > 1400 ? Math.max(t[1] + 150, 2050) : t[1];
+  // v2.2：灯可以带“途经点”（via）——去天宫要先到阶顶上空、再从南天门正中穿过去
+  if (P._viaFor !== b.id) { P._viaFor = b.id; P._via = 0; }
+  let via = !toGate && b.via && P._via < b.via.length ? b.via[P._via] : null;
+  if (via && v3.dist(via, P.pos) < 320) { P._via++; via = P._via < b.via.length ? b.via[P._via] : null; }
+  const t = via ? via : !toGate ? b.flame : front ? [F.cx, 1350, F.z1 + 300] : [F.cx, 1520, F.gz - 1100], d = v3.sub(t, P.pos), dist = v3.len(d), hd = Math.hypot(d[0], d[2]);
+  const wantY = toGate || via ? t[1] : hd > 1400 ? Math.max(t[1] + 150, 2050) : t[1];
   let yawE = Math.atan2(d[0], d[2]) - P.yaw; yawE = Math.atan2(Math.sin(yawE), Math.cos(yawE));
   const pitchT = clamp(Math.atan2(wantY - P.pos[1], Math.max(hd, 1)), -0.7, 0.7);
   return { sx: clamp(yawE * 1.6, -1.1, 1.1) * dt, sy: clamp((pitchT - P.pitch) * 2.0, -0.9, 0.9) * dt, thrust: 1, boost: dist > 1800 && Math.abs(yawE) < 0.35 };
