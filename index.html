@@ -62,7 +62,7 @@ canvas#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: blo
 #pause button.on { background: var(--gold); color: #1a1208; border-color: var(--gold); }
 #pause input[type=range] { width: 190px; accent-color: #f2c477; }
 #pause .go { margin-top: 30px; padding: 11px 44px; font-size: 15px; letter-spacing: .6em; text-indent: .6em; }
-#pause .tips { margin-top: 26px; font-size: 12px; letter-spacing: .2em; opacity: .55; line-height: 2.1; }
+#pause .tips { margin-top: 26px; font-size: 14px; letter-spacing: .14em; opacity: .95; line-height: 2.0; color: #efe6d2; background: rgba(10, 8, 6, .55); padding: 12px 20px; border-radius: 6px; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
 
 #photo { position: absolute; left: 0; right: 0; bottom: 26px; text-align: center; font-size: 12px; letter-spacing: .26em; opacity: .7; text-shadow: 0 1px 8px rgba(0, 0, 0, .9); }
 #ending { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(ellipse at 50% 50%, rgba(4, 6, 12, .0) 0%, rgba(4, 6, 12, .5) 100%); }
@@ -2331,15 +2331,12 @@ float sceneAlpha(int id, vec2 uv, vec4 ip, vec3 wp, float t) {
     return (n * 0.6 + n2 * 0.45 + n4 * 0.3) * (1.15 - r * r) - 0.52;
   }
   if (id == 13) {
-    // v1.8 瀑布：上段是连续的水幕，往下渐渐撕成水绺，最下面散成稀疏的水雾。纹理整体往下流（约百米每秒的观感）
+    // v1.9 瀑布：中间几乎是实的一整片水（不再像纱），只在两边和最下面碎开；细节靠颜色里的竖向水纹
     float fy = uv.y * 26.0 - t * 1.15;
-    float n1 = n3(vec3(uv.x * 30.0, fy * 0.7, ip.y * 9.0)), n2 = n3(vec3(uv.x * 95.0, fy * 1.5, 1.7)), n3v = n3(vec3(uv.x * 260.0, fy * 3.0, 4.2));
-    float streak = n1 * 0.6 + n2 * 0.35 + n3v * 0.2;
-    float sheet = 1.0 - smoothstep(0.08, 0.7, uv.y);
+    float s1 = n3(vec3(uv.x * 40.0, fy * 0.35, ip.y * 9.0)), s2 = n3(vec3(uv.x * 120.0, fy * 0.8, 1.7));
     float edge = smoothstep(0.0, 0.14, uv.x) * smoothstep(1.0, 0.86, uv.x);
-    float body = mix(streak, 0.8 + 0.3 * streak, sheet);
-    float mist = smoothstep(0.65, 1.0, uv.y);
-    return body * (0.45 + 0.55 * edge) * (1.0 - 0.6 * mist) - 0.42 + 0.1 * sheet;
+    float breakup = smoothstep(0.6, 1.0, uv.y);
+    return edge * (0.75 + 0.35 * s1) - breakup * (0.45 + 0.5 * (1.0 - s2)) - (1.0 - edge) * 0.35 * s2 - 0.22;
   }
   return 1.0;
 }
@@ -2754,11 +2751,11 @@ void main() {
       slope = vec2(cos(w1.x + 1.7 * w1.y) * 0.006 + cos(w2.x - w2.y) * 0.004, sin(w1.y - 0.6 * w1.x) * 0.006 + sin(w2.y + 0.8 * w2.x) * 0.004) * (1.0 - smoothstep(600.0, 3000.0, length(P - uCamPos)));
       albedo = vec3(0.012, 0.016, 0.02); rough = 0.0; metal = 0.0; ao = 1.0;
     } else if (vMat.z > 0.5) {
-      // v1.8 瀑布：白沫与透出青色的水体交错，往下流动；越往下越白（碎成水雾）
+      // v1.9 瀑布：沿下落方向拉得很长的水纹（白沫与青色水体相间），整体往下流
       float fy = uv.y * 26.0 - uTime * 1.15;
-      float foam = smoothstep(0.3, 0.72, n3(vec3(uv.x * 48.0, fy * 0.7, 2.0)) * 0.7 + n3(vec3(uv.x * 130.0, fy * 1.6, 5.0)) * 0.35 + uv.y * 0.3);
-      albedo = mix(vec3(0.42, 0.58, 0.62), vec3(0.95, 0.96, 0.97), foam);
-      rough = mix(0.25, 0.85, foam); flag = 2.0; trans = mix(0.8, 0.5, foam);
+      float foam = smoothstep(0.32, 0.72, n3(vec3(uv.x * 55.0, fy * 0.3, 2.0)) * 0.7 + n3(vec3(uv.x * 160.0, fy * 0.9, 5.0)) * 0.3 + uv.y * 0.2);
+      albedo = mix(vec3(0.20, 0.30, 0.34), vec3(0.90, 0.93, 0.95), foam);      // v1.9：水体更深、白沫更白，对比拉开；逆光时更透
+      rough = mix(0.12, 0.85, foam); flag = 2.0; trans = mix(0.9, 0.5, foam);
       emissive = albedo * 0.05;
     } else {
     albedo = vec3(0.82, 0.88, 0.93); rough = 0.35; flag = 3.0; trans = 0.9;
@@ -4087,6 +4084,9 @@ void main() {
   } else if (k == 3) {     // 流线
     float x = abs(vUv.x * 2.0 - 1.0);
     a = exp(-x * x * 8.0) * sin(vUv.y * PI);
+  } else if (k == 5) {     // 涟漪：贴水面的一圈细环（uv 0..1 的方片）
+    float r = length(vUv * 2.0 - 1.0);
+    a = exp(-pow((r - 0.82) / 0.07, 2.0)) * smoothstep(1.0, 0.95, r);
   } else {                 // 水雾：没有亮核的软团
     float r = length(vUv * 2.0 - 1.0);
     a = exp(-r * r * 3.2) * (1.0 - smoothstep(0.6, 1.0, r));
@@ -4140,6 +4140,8 @@ class FX {
     let s = v3.cross(t, view); const l = v3.len(s) || 1; s = v3.scale(s, w / l);
     this.quad(v3.sub(a, s), v3.add(a, s), v3.add(b, s), v3.sub(b, s), c, kind);
   }
+  // 贴水面的涟漪环（水平方片）
+  ring(p, r, cam, c) { this.quad([p[0] - r, p[1], p[2] - r], [p[0] + r, p[1], p[2] - r], [p[0] + r, p[1], p[2] + r], [p[0] - r, p[1], p[2] + r], c, 5); }
   // 剑痕：points 由新到旧
   ribbon(points, w, cam, c) {
     const n = points.length;
@@ -4341,7 +4343,6 @@ function swordGeo(g) {
 function heroGeo() {
   const g = new Geo(4096);
   const H = MAT.HERO;
-  swordGeo(g);
   if (SCULPT) {
     // 雕塑模型：脚踩剑脊，身子略微前倾。斗篷下摆（离身体中轴远、膝盖以下）带布料权重，随风摆动、向后掠
     const xf = m4.mul(m4.create(), m4.translate(m4.create(), 0, -0.035, 0.05), m4.mul(m4.create(), m4.rotX(m4.create(), 0.07), m4.trs(m4.create(), 0, 0, 0, 0, HERO_H)));
@@ -4457,6 +4458,8 @@ class Hero {
     this.gl = gl;
     this.model = m4.create();
     this.body = makeBatch(gl, heroGeo(), { name: 'hero', deform: 2, deformP: [0.03, 7, 0.1, 0], model: m4.create(), feature: 100, twoSided: true });
+    { const sg = new Geo(4096); swordGeo(sg); this.sword = makeBatch(gl, sg, { name: 'sword', model: m4.create(), feature: 100, twoSided: true }); }      // v1.9：剑单独一批——走路时背在身后
+    this.walk = 0;
     this.cape = new Cape();
     this.cgeo = new Geo(CW * CL + 8);
     this.cprev = new Float32Array(CW * CL * 3); this.cprevOk = false;
@@ -4464,7 +4467,7 @@ class Hero {
     this.rbatch = makeBatch(gl, this.cgeo, { name: 'cape', dynamic: true, twoSided: true, model: m4.create(), feature: 100 });
     this.rbatch.localRadius = 6; this.rbatch.localCenter = [0, 0, 0];
     this.fx = true;   // 剑气特效开关（特效本身在 main.js 的粒子层里画）
-    scene.batches.push(this.body, this.rbatch);
+    scene.batches.push(this.body, this.rbatch, this.sword);
     this.pos = [0, 0, 0];
   }
   _buildCapeGeo(origin, light, fwd) {
@@ -4488,6 +4491,11 @@ class Hero {
   // model：行者的世界矩阵；vel：世界速度；flutter：0..1
   update(model, pos, vel, dt, time, flutter, camUp) {
     setBatchModel(this.body, model);
+    // 剑：飞行时在脚下；走路时斜背在身后（缩小一些）
+    if (this.walk > 0.5) {
+      const back = m4.mul(m4.create(), m4.translate(m4.create(), 0.05, 1.05, -0.24), m4.mul(m4.create(), m4.rotZ(m4.create(), 0.55), m4.mul(m4.create(), m4.rotX(m4.create(), -Math.PI / 2), m4.trs(m4.create(), 0, 0, 0, 0, 0.42))));
+      setBatchModel(this.sword, m4.mul(m4.create(), model, back));
+    } else setBatchModel(this.sword, model);
     this.body.deformP = [0.025 + 0.06 * flutter, 6 + 9 * flutter, 0.06 + 0.22 * flutter, 0.03 * flutter];
     this.pos = pos.slice();
     const wind = [-vel[0], -vel[1], -vel[2]];
@@ -5296,6 +5304,22 @@ function karstGeo(r = 160, h = 1400, seed = 1) {
     const rr = r * prof * poly(a) * crack * strata;
     return [ca * rr + lx * t0 * t0, y, sa * rr + lz * t0 * t0];
   }, { uv: (u, v) => [u * 30, v * 60], ao: (u, v) => 0.6 + 0.4 * Math.min(1, v * 1.3), flip: true });
+  // 给贴壁的瀑布用：角度 a、高度 y 处崖壁到中轴的距离（与上面的轮廓同一套公式，含横向岩层、不含细裂隙），以及这一高度的整体偏移
+  g.radiusAt = (a, y) => { const t = Math.max(0, Math.min(1, (y + below) / (h + below))); const strata = 1.0 + 0.07 * Math.max(0, Math.sin(y * 0.021 + seed * 2.0)) ** 6; return r * (1.0 - 0.38 * t) * poly(a) * 1.06 * strata; };
+  g.leanAt = (y) => { const t = Math.max(0, Math.min(1, (y + below) / (h + below))); return [lx * t * t, lz * t * t]; };
+  return g;
+}
+
+// v1.9 贴壁瀑布：沿石柱 kg 的崖壁，从 yTop 落到 yBot；中心角 a0、半宽 da（弧度）。崖口先往外探出十来米再贴着壁往下。big：大瀑（更宽、更厚）
+function wallFallGeo(kg, a0, da, yTop, yBot, big = 1) {
+  const g = new Geo(8192);
+  g.mat(MAT.WATER, 1, 1, 0);
+  const nu = big ? 22 : 10, nv = 70, H = yTop - yBot;
+  g.surf(nu, nv, (u, v) => {
+    const a = a0 + (u - 0.5) * 2 * da * (1 + v * 0.25), y = yTop - v * H, lip = (big ? 16 : 7) * Math.exp(-v * 18) + (big ? 5 : 3) + v * (big ? 10 : 4);
+    const r = kg.radiusAt(a, y) + lip, l = kg.leanAt(y);
+    return [Math.cos(a) * r + l[0], y, Math.sin(a) * r + l[1]];
+  }, { uv: (u, v) => [u, v] });
   return g;
 }
 // v1.6 梯田浮岛（花海）：一圈圈收小的台地，每层台面一种花（材质 ROCK 的 w = 2 变体），岩底倒悬
@@ -5508,7 +5532,7 @@ function bannerGeo(w = 14, l = 120, red = true) {
 }
 
 
-return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
+return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
 })();
 
 // ---- world/world.js ----
@@ -6028,6 +6052,7 @@ function buildWorld(gl, onProgress = () => {}) {
     add(P.hallL, halls.map(mir), { name: 'M.hallR', feature: 200, ...mo });
     add(P.hallM, hallsM.map(mir), { name: 'M.hallsR', feature: 120, ...mo });
     W.mirror = { ...M, pool };
+    (W.waters || (W.waters = [])).push({ x0: pool[0], z0: pool[1], x1: pool[2], z1: pool[3], y: Y });
     grpOf(n0, 'forest');
   }
   onProgress(0.7);
@@ -6184,6 +6209,7 @@ function buildWorld(gl, onProgress = () => {}) {
       for (const sz of [-1, 1]) g.box(pcx, WY + 1, pcz + sz * (pd / 2 + 15), pw, 4, 30, { aoB: 0.6 });
       g.mat(MAT.WATER, 1, 0, 1); g.box(pcx, WY - 1, pcz, pw, 2, pd, { skip: '-y-x+x-z+z' });
       add(g, null, { name: 'G.pool', feature: 800 });
+      (W.waters || (W.waters = [])).push({ x0: pool[0], z0: pool[1], x1: pool[2], z1: pool[3], y: WY });
       obb([pcx, WY - 40, pcz], [pw / 2 + 30, 41, pd / 2 + 30]);
       // v1.6：长墙撤掉（试玩反馈：月门本身就是地标，旁边那道长墙反而怪）
       // 左岸的重檐大殿（按真实尺寸生成的那座）与前景的巨柱
@@ -6224,7 +6250,7 @@ function buildWorld(gl, onProgress = () => {}) {
   {
     const n0 = W.batches.length, c0 = W.colliders.length, kr = mulberry32(1606);
     const kg = [K.karstGeo(150, 1300, 1), K.karstGeo(190, 1700, 2), K.karstGeo(120, 1050, 3), K.karstGeo(230, 2100, 4)];
-    const ki = [[], [], [], []], tops = [], pav = [];
+    const ki = [[], [], [], []], tops = [], pav = [], kmat = [];
     const KC = [7300, 21500];
     const peaks = [[6300, 21000, 3, 1.25]];      // 最高的一座（挂长瀑）
     for (let i = 0; i < 70 && peaks.length < 46; i++) {
@@ -6236,7 +6262,7 @@ function buildWorld(gl, onProgress = () => {}) {
     const hs = [1300, 1700, 1050, 2100], rs = [150, 190, 120, 230];
     for (const [x, z, k, s] of peaks) {
       const sy = s * (0.85 + kr() * 0.3), yaw = kr() * 6.283;
-      ki[k].push(TS(x, -100, z, yaw, s, sy, s));
+      ki[k].push(TS(x, -100, z, yaw, s, sy, s)); kmat.push([k, TS(x, -100, z, yaw, s, sy, s), sy]);
       const top = -100 + hs[k] * sy, r = rs[k] * s;
       col({ t: 'cyl', c: [x, z], r: r * 0.95, y0: -500, y1: top + 40 });
       const nt = 9 + Math.floor(kr() * 8);
@@ -6246,11 +6272,13 @@ function buildWorld(gl, onProgress = () => {}) {
     kg.forEach((g, k) => { if (ki[k].length) add(g, ki[k], { name: 'K.karst' + k, feature: 400 }); });
     pineBatch(tops, 'K');
     if (pav.length) add(P.pav, pav, { name: 'K.pav', feature: 30, maxDist: 14000 });
-    // 长瀑：最高那座的西壁（朝航线）。瀑布面 46×700 → 放大成 170 宽、2400 高；再三道细的
-    const [bx, bz, , bs] = peaks[0], btop = -100 + hs[3] * bs;
-    const fx0 = bx - rs[3] * bs * 0.86, fallI = [TS(fx0, btop - 40, bz, -Math.PI / 2, 3.7, 3.4, 3.7), TS(fx0 - 14, btop - 60, bz + 30, -Math.PI / 2 + 0.35, 2.4, 3.3, 2.4), TS(fx0 - 10, btop - 50, bz - 40, -Math.PI / 2 - 0.3, 2.0, 3.35, 2.0)];      // 三片交叉，有厚度
-    for (let j = 1; j <= 3; j++) { const [x, z, k, s] = peaks[j * 4]; const tp = -100 + hs[k] * s; fallI.push(TS(x - rs[k] * s * 0.85, tp * 0.8, z, -Math.PI / 2, 1.2, tp * 0.8 / 700, 1.2)); }
-    add(P.fall, fallI, { name: 'K.falls', alpha: true, twoSided: true, feature: 300, shadow: false });
+    // 长瀑（v1.9 重做）：瀑布面贴着石柱的崖壁往下走（按石柱自己的轮廓算半径，离壁几米），所以近看不会和崖壁之间空一道缝。
+    // 在石柱的局部坐标里生成，和石柱用同一个实例矩阵。挑朝西（朝航线）的那一面
+    const westA = (M) => { let best = 0, bx = 1e9; for (let a = 0; a < 6.283; a += 0.02) { const p = m4.point(M, [Math.cos(a), 0, Math.sin(a)]), o = m4.point(M, [0, 0, 0]); if (p[0] - o[0] < bx) { bx = p[0] - o[0]; best = a; } } return best; };
+    const fallsG = [];
+    [0, 4, 8, 12].forEach((pi, j) => { const [k, M] = kmat[pi]; const big = j === 0; fallsG.push([K.wallFallGeo(kg[k], westA(M), big ? 0.40 : 0.12, hs[k] * (big ? 0.995 : 0.85), big ? -60 : hs[k] * 0.25, big ? 1 : 0), M]); });
+    fallsG.forEach(([g, M], j) => add(g, [M], { name: 'K.fall' + j, alpha: true, twoSided: true, feature: 300, shadow: false }));
+    W.fallMist = kmat.length ? [[0, kmat[0][1]]].map(([, M]) => { const a = westA(M), r = kg[kmat[0][0]].radiusAt(a, 400); const p = m4.point(M, [Math.cos(a) * (r + 30), 400, Math.sin(a) * (r + 30)]); return { p, w: 260 }; }) : [];
     W.karst = { c: KC, peaks: peaks.slice(0, 4) };
     W.scenic = [
       { id: 'K1', name: '石林', sub: '千柱出云 · 一瀑垂天', en: 'THE STONE FOREST', pos: [7000, 1500, 21500], r: 2600 },
@@ -6288,7 +6316,7 @@ function buildWorld(gl, onProgress = () => {}) {
     // —— 油菜花海
     const RA = [4500, 1450, 36900], ra = K.fieldIslandGeo(1750, 3, 11);
     add(ra.geo, [T(RA[0], RA[1], RA[2], 0)], { name: 'H.rapeIsle', feature: 400 });
-    col({ t: 'ell', c: [RA[0], RA[1] - 300, RA[2]], r: [1600, 400, 1600] });
+    col({ t: 'ell', c: [RA[0], RA[1] - 300, RA[2]], r: [1600, 400, 1600], nowalk: true });
     const rc = [K.rapeClumpGeo(1), K.rapeClumpGeo(2), K.rapeClumpGeo(3)], ri = [[], [], []];
     plant(ra, RA[0], RA[1], RA[2], 9000, 0, (x, y, z) => { const s = 9 + fr() * 6; ri[Math.floor(fr() * 3)].push(TS(x, y, z, fr() * 6.283, s, s * (0.9 + fr() * 0.3), s)); return 0; });
     ri.forEach((ins, k) => add(rc[k], ins, { name: 'H.rape' + k, feature: 6, maxDist: 5200 }));
@@ -6302,14 +6330,15 @@ function buildWorld(gl, onProgress = () => {}) {
     }
     add(su.geo, [T(SU[0], SU[1], SU[2], 0)], { name: 'H.sunIsle', feature: 400 });
     add(sf, si, { name: 'H.sunflowers', feature: 8, maxDist: 6000 });
-    col({ t: 'ell', c: [SU[0], SU[1] - 260, SU[2]], r: [1300, 360, 1300] });
+    col({ t: 'ell', c: [SU[0], SU[1] - 260, SU[2]], r: [1300, 360, 1300], nowalk: true });
     // —— 玫瑰园（深红为主，夹着粉与白的几片；正中一座亭）
     const RO = [7300, 1550, 42700], ro = K.fieldIslandGeo(1300, 5, 37), rb = [K.roseBushGeo(3, 1), K.roseBushGeo(4, 2), K.roseBushGeo(5, 3)], rbi = [[], [], []];
     plant(ro, RO[0], RO[1], RO[2], 15000, 90, (x, y, z) => { if (K.fbm(x * 0.012, 7.0, z * 0.012, 2) < 0.36) return 0; const big = K.fbm(x * 0.004, 3.0, z * 0.004, 2); const k = big > 0.6 ? 1 : big < 0.32 ? 2 : 0; const s = 6 + fr() * 4; rbi[k].push(TS(x, y, z, fr() * 6.283, s, s * (0.8 + fr() * 0.4), s)); return 0; });
     add(ro.geo, [T(RO[0], RO[1], RO[2], 0)], { name: 'H.roseIsle', feature: 400 });
     rbi.forEach((ins, k) => { if (ins.length) add(rb[k], ins, { name: 'H.roses' + k, feature: 6, maxDist: 5200 }); });
     add(P.pav, [T(RO[0], RO[1] + ro.h(0, 0), RO[2], 0.3, 5)], { name: 'H.rosePav', feature: 30 });
-    col({ t: 'ell', c: [RO[0], RO[1] - 240, RO[2]], r: [1200, 340, 1200] });
+    col({ t: 'ell', c: [RO[0], RO[1] - 240, RO[2]], r: [1200, 340, 1200], nowalk: true });
+    (W.walk || (W.walk = [])).push({ c: RA, h: ra.h, rim: ra.rim }, { c: SU, h: su.h, rim: su.rim }, { c: RO, h: ro.h, rim: ro.rim });
     // —— 悬空花园塔：一根素白的芯柱，挑出六层台地；台面是花毯（油菜 / 玫瑰相间），台沿垂藤，每层两侧各挂一道小瀑布
     const GC = [5700, 0, 40900], core = K.megaPillarGeo({ W: 300, D: 300, H: 3500, rc: 60, pitch: 22, depth: 4, panel: 50, white: true });
     add(core, [T(GC[0], 0, GC[2], 0)], { name: 'H.gardenCore', feature: 400 });
@@ -6399,6 +6428,33 @@ function buildWorld(gl, onProgress = () => {}) {
 }
 
 // ---------- 碰撞：把球体推出实体，返回接触法线（无接触返回 null） ----------
+// v1.9 落地行走：点 (x, z) 正下方（不高于 y + 0.5）最高的可站立面；没有返回 null。
+// 花田等浮岛用 W.walk 里的精确顶面；碰撞体里标了 nowalk 的（浮岛的椭球）不算
+function groundAt(W, x, y, z) {
+  let best = -Infinity;
+  for (const s of (W.walk || [])) {
+    const dx = x - s.c[0], dz = z - s.c[2], d = Math.hypot(dx, dz);
+    if (d > s.rim(Math.atan2(dz, dx)) * 0.96) continue;
+    const gy = s.c[1] + s.h(dx, dz); if (gy <= y + 0.5 && gy > best) best = gy;
+  }
+  for (const c of W.colliders) {
+    if (c.nowalk || (c.grp && W.grp && !W.grp[c.grp])) continue;
+    let top = null;
+    if (c.t === 'obb') {
+      if (Math.abs(c.ay[1]) < 0.99) continue;
+      const dx = x - c.c[0], dz = z - c.c[2], lx = dx * c.ax[0] + dz * c.ax[2], lz = dx * c.az[0] + dz * c.az[2];
+      if (Math.abs(lx) <= c.h[0] && Math.abs(lz) <= c.h[2]) top = c.c[1] + c.h[1];
+    } else if (c.t === 'cyl') { if (Math.hypot(x - c.c[0], z - c.c[1]) <= c.r) top = c.y1; }
+    else if (c.t === 'ell') { const qx = (x - c.c[0]) / c.r[0], qz = (z - c.c[2]) / c.r[2], q = qx * qx + qz * qz; if (q < 1) top = c.c[1] + c.r[1] * Math.sqrt(1 - q); }
+    if (top !== null && top <= y + 0.5 && top > best) best = top;
+  }
+  return best === -Infinity ? null : best;
+}
+function waterAt(W, x, z, y) {
+  for (const w of (W.waters || [])) if (x > w.x0 && x < w.x1 && z > w.z0 && z < w.z1 && Math.abs(y - w.y) < 3) return w.y;
+  return null;
+}
+
 function collide(W, p, r) {
   let hit = null;
   for (const c of W.colliders) {
@@ -6466,14 +6522,14 @@ function collide(W, p, r) {
   return hit;
 }
 
-return { SITES, buildWorld, collide };
+return { SITES, buildWorld, groundAt, waterAt, collide };
 })();
 
 // ---- game/player.js ----
 __m['game/player.js'] = (function () {
 // 云阙 · 御剑飞行与追尾镜头
 const { m4, v3, clamp, lerp, damp, smoothstep, DEG } = __m['engine/math.js'];
-const { collide } = __m['world/world.js'];
+const { collide, groundAt } = __m['world/world.js'];
 
 class Player {
   constructor(world, hero) {
@@ -6487,6 +6543,7 @@ class Player {
     this.gaze = null; this.gazeYaw = 0; this.gazePitch = 0;      // gaze = { pos, k }：镜头被某个庞然大物“吸”过去一点（巨鲲掠过时）
     this.stats = { maxSpeed: 0, dist: 0 };
     this.autoPilot = null;
+    this.vy = 0; this.walkPhase = 0; this.walkV = [0, 0]; this.onGround = false; this.step = 0;      // v1.9 落地行走
   }
   fwd(yaw = this.yaw, pitch = this.pitch) { const c = Math.cos(pitch); return [Math.sin(yaw) * c, Math.sin(pitch), Math.cos(yaw) * c]; }
   launch() { if (this.state === 'idle') { this.state = 'launch'; this.t = 0; } }
@@ -6498,6 +6555,26 @@ class Player {
     if (this.state === 'idle') {
       this.speed = 0; this.vel = [0, 0, 0];
       this.pos = W.spawn.pos.slice(); this.pos[1] += Math.sin(time * 0.9) * 0.03;
+    } else if (this.state === 'walk') {
+      // v1.9 落地行走：鼠标转向、WASD 走、Shift 跑；F / 空格 重新御剑起飞；从台边走下去就往下掉，掉得快了剑会接住你（回到飞行）
+      const [sx, sy] = input.enabled ? input.steer(dt) : [0, 0];
+      this.yaw += sx; this.pitch = clamp(this.pitch + sy, -0.7, 0.55);
+      const mv = (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0), st = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0);
+      const run = input.down('ShiftLeft') || input.down('ShiftRight'), spd = run ? 18 : 7;
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+      let tx = fx * mv + rx * st, tz = fz * mv + rz * st; const tl = Math.hypot(tx, tz); if (tl > 1) { tx /= tl; tz /= tl; }
+      this.walkV[0] = damp(this.walkV[0], tx * spd, 9, dt); this.walkV[1] = damp(this.walkV[1], tz * spd, 9, dt);
+      const p = this.pos; p[0] += this.walkV[0] * dt; p[2] += this.walkV[1] * dt;
+      const body = [p[0], p[1] + 1.0, p[2]]; collide(W, body, 0.45); p[0] = body[0]; p[2] = body[2];
+      const g = groundAt(W, p[0], p[1] + 1.2, p[2]);
+      if (g !== null && p[1] - g < 1.5 && this.vy <= 0.1) { p[1] = g; this.vy = 0; this.onGround = true; this.landing = false; }
+      else { this.onGround = false; this.vy -= 22 * dt; if (this.landing) this.vy = Math.max(this.vy, -32);      // 收剑落下：限速，落地前不会被当成“掉下去”
+ p[1] += this.vy * dt; if (g !== null && p[1] < g) { p[1] = g; this.vy = 0; } }
+      this.speed = Math.hypot(this.walkV[0], this.walkV[1]); this.vel = [this.walkV[0], this.vy, this.walkV[1]];
+      const ph0 = this.walkPhase; this.walkPhase += this.speed * dt * (run ? 0.55 : 0.85);
+      this.step = Math.floor(this.walkPhase / Math.PI) !== Math.floor(ph0 / Math.PI) && this.onGround && this.speed > 1.5 ? 1 : 0;      // 这一帧落了一步
+      if ((this.vy < -40 && !this.landing) || input.hit('KeyF') || input.hit('Space')) { input.pressed.KeyF = input.pressed.Space = false; this.state = 'fly'; this.speed = this.vy < -40 ? 120 : 70; this.pitch = this.vy < -40 ? -0.2 : 0.35; this.vy = 0; this.hero.walk = 0; }
+      flutter = 0.08 + this.speed * 0.01;
     } else {
       let [sx, sy] = input.enabled ? input.steer(dt) : [0, 0];
       let thrust = input.down('KeyW') || input.lmb ? 1 : 0, brake = input.down('KeyS') ? 1 : 0, boost = input.down('ShiftLeft') || input.down('ShiftRight');
@@ -6556,12 +6633,20 @@ class Player {
         }
       }
       flutter = clamp(this.speed / 200, 0.1, 1);
+      // v1.9：F 落地——正下方 400 米内有能站的地方就收剑落下
+      this.groundBelow = this.state === 'fly' && !this.autoPilot ? groundAt(W, p[0], p[1], p[2]) : null;
+      if (this.groundBelow !== null && p[1] - this.groundBelow > 400) this.groundBelow = null;
+      if (this.groundBelow !== null && input.hit('KeyF')) { input.pressed.KeyF = false; this.state = 'walk'; this.vy = -30; this.landing = true; this.walkV = [0, 0]; this.pitch = -0.1; this.roll = 0; this.hero.walk = 1; }
     }
     this.bump = damp(this.bump, 0, 3, dt);
     // 姿态：转弯时压坡度
     const rollT = clamp(-this.yawRate * 0.55, -1.05, 1.05);
     this.roll = damp(this.roll, rollT, 4.5, dt);
-    m4.fromYPR(this.model, this.pos, this.yaw, this.pitch * 0.75, this.roll, 1);
+    if (this.state === 'walk') {
+      const bob = Math.abs(Math.sin(this.walkPhase)) * 0.06 * Math.min(1, this.speed / 5), sway = Math.sin(this.walkPhase) * 0.035 * Math.min(1, this.speed / 5);
+      this.roll = damp(this.roll, 0, 8, dt);
+      m4.fromYPR(this.model, [this.pos[0], this.pos[1] + bob + 0.04, this.pos[2]], this.yaw, 0.05 * Math.min(1, this.speed / 10), sway, 1);
+    } else m4.fromYPR(this.model, this.pos, this.yaw, this.pitch * 0.75, this.roll, 1);
     this.hero.update(this.model, this.pos, this.vel, dt, time, flutter, cam.up);
 
     // ---------- 镜头 ----------
@@ -6594,9 +6679,10 @@ class Player {
     const cf = this.fwd(this.camYaw + this.lookYaw + this.gazeYaw, this.camPitch + this.lookPitch + this.gazePitch);
     // 抵达奇观 / 点灯时拉一个远景：人物缩到画面的几十分之一，把尺度让给巨构
     this.wideT = Math.max(0, this.wideT - dt); this.wide = damp(this.wide, this.wideT > 0 ? 1 : 0, 0.9, dt);
-    this.camDist = damp(this.camDist, 10.5 + 5.5 * sp01 + 44 * this.wide, 2.5, dt);
+    this.camDist = damp(this.camDist, this.state === 'walk' ? 6.2 : 10.5 + 5.5 * sp01 + 44 * this.wide, 2.5, dt);
     const up = [0, 1, 0];
-    let cp = [this.pos[0] - cf[0] * this.camDist, this.pos[1] - cf[1] * this.camDist + 2.7 + 0.8 * sp01 + 7 * this.wide, this.pos[2] - cf[2] * this.camDist];
+    const wk = this.state === 'walk';
+    let cp = [this.pos[0] - cf[0] * this.camDist, this.pos[1] - cf[1] * this.camDist + (wk ? 2.0 : 2.7 + 0.8 * sp01 + 7 * this.wide), this.pos[2] - cf[2] * this.camDist];
     let tgt = [this.pos[0] + cf[0] * 40, this.pos[1] + cf[1] * 40 + 1.6, this.pos[2] + cf[2] * 40];
     if (this.shake > 0.002) { const s = this.shake * 0.5; cp[0] += Math.sin(time * 61) * s; cp[1] += Math.cos(time * 53) * s; cp[2] += Math.sin(time * 47) * s; }
     if (this.boosting) { const s = 0.035; cp[0] += Math.sin(time * 39) * s; cp[1] += Math.cos(time * 43) * s; }
@@ -6605,6 +6691,7 @@ class Player {
       cp = v3.lerp(this._cp, cp, k); tgt = v3.lerp(this._ct, tgt, k);
     }
     cam.setLook(cp, v3.sub(tgt, cp), this.roll * 0.32 * (this.state === 'launch' ? smoothstep(0, 1, this.t / 2.4) : 1), up);
+    if (wk) this.fov = damp(this.fov, 62 * DEG, 3, dt);
     cam.fov = this.state === 'launch' ? lerp(50 * DEG, this.fov, smoothstep(0, 1, this.t / 2.4)) : this.fov;
   }
 }
@@ -6750,7 +6837,7 @@ const UI_HTML = `
   <div class="row"><span>纵向反转</span><div class="opts"><button id="inv">关</button></div></div>
   <div class="row"><span>性能读数</span><div class="opts"><button id="fpsbtn">关</button></div></div>
   <button class="go" id="resume">继续</button>
-  <div class="tips">点亮七盏长明灯，天光便从拂晓走到月夜<br>拾取沿途灵光可补充剑气（Shift 疾行）<br>H 隐藏界面　·　V 剑气流光　·　P 摄影模式　·　[ ] 在通关后调节时辰</div>
+  <div class="tips">点亮七盏长明灯，天光便从拂晓走到月夜<br>拾取沿途灵光可补充剑气（Shift 疾行）<br>F 落地行走 / 再起飞<br>H 隐藏界面　·　V 剑气流光　·　P 摄影模式　·　[ ] 在通关后调节时辰</div>
 </div></div>
 <div id="fps" class="hidden"></div>`;
 
@@ -7210,6 +7297,7 @@ const { MAT } = __m['render/shaders_scene.js'];
 const { DayCycle } = __m['game/daycycle.js'];
 const { Input } = __m['game/input.js'];
 const { Hero } = __m['game/hero.js'];
+const { waterAt } = __m['world/world.js'];
 const { Player } = __m['game/player.js'];
 const { Sound } = __m['game/audio.js'];
 const { UI, $ } = __m['game/ui.js'];
@@ -7470,6 +7558,8 @@ function frame(dt, silent) {
       const dx = w.p[0] - P.pos[0], dy = w.p[1] - P.pos[1], dz = w.p[2] - P.pos[2];
       if (dx * dx + dy * dy + dz * dz < reach * reach) { w.got = true; w.t = 0; P.energy = Math.min(1, P.energy + 0.085); sound.chime(); }
     }
+    // v1.9 落地提示
+    if (P.state === 'fly' && P.groundBelow != null && P.speed < 500 && G.time - (G.landHintT || -99) > 25) { G.landHintT = G.time; ui.hint('按 F 落地行走（F / 空格 再起飞）', 4); }
     // 地名题字
     for (const s of (world.scenic || [])) {      // v1.7 东境的几处（不点灯，只题字）
       if (G.seen[s.id] || P.state !== 'fly') continue;
@@ -7581,7 +7671,27 @@ function frame(dt, silent) {
     const d = Math.sqrt(d2), pul = 0.8 + 0.2 * Math.sin(G.time * 3 + w.ph);
     fx.sprite([w.p[0], w.p[1] + Math.sin(G.time * 1.3 + w.ph) * 1.5, w.p[2]], (2.8 + d * 0.004) * pul, cam, [0.66, 0.9, 1.0, 0.85 * (1 - smoothstep(2000, 3000, d))]);
   }
-  if (P.state !== 'idle' && hero.fx) {
+  // v1.9 踩水：走在水镜上，每一步脚下一圈涟漪、溅起一小簇水花；站着时偶尔一圈小涟漪
+  { const R2 = fx.ripples || (fx.ripples = []), D2 = fx.drops || (fx.drops = []);
+    if (P.state === 'walk' && P.onGround) {
+      const wy = waterAt(world, P.pos[0], P.pos[2], P.pos[1]);
+      if (wy !== null && (P.step || (P.speed < 0.5 && Math.random() < dt * 0.6))) {
+        const side = Math.sin(P.walkPhase) > 0 ? 1 : -1, rx = Math.cos(P.yaw) * 0.14 * side, rz = -Math.sin(P.yaw) * 0.14 * side;
+        const fp = [P.pos[0] + rx, wy + 0.03, P.pos[2] + rz];
+        R2.push({ p: fp, t: 0, life: 1.6 + Math.random() * 0.6, big: P.speed > 10 ? 1.6 : 1 });
+        if (P.step) for (let k = 0; k < (P.speed > 10 ? 18 : 10); k++) { const a = Math.random() * 6.283, h = 1.2 + Math.random() * 2.2; D2.push({ p: fp.slice(), v: [Math.cos(a) * (0.6 + Math.random()) + P.vel[0] * 0.3, h, Math.sin(a) * (0.6 + Math.random()) + P.vel[2] * 0.3], t: 0, y0: wy }); }
+      }
+    }
+    for (let i = R2.length - 1; i >= 0; i--) { const r = R2[i]; r.t += dt; if (r.t > r.life) { R2.splice(i, 1); continue; } const k = r.t / r.life; fx.ring(r.p, (0.15 + k * 1.6) * r.big, cam, [0.85, 0.92, 1.0, 0.55 * (1 - k) * (1 - k)]); }
+    for (let i = D2.length - 1; i >= 0; i--) { const d = D2[i]; d.t += dt; d.v[1] -= 9.8 * dt; d.p[0] += d.v[0] * dt; d.p[1] += d.v[1] * dt; d.p[2] += d.v[2] * dt; if (d.p[1] < d.y0) { R2.push({ p: [d.p[0], d.y0 + 0.03, d.p[2]], t: 0, life: 0.7, big: 0.2 }); D2.splice(i, 1); continue; } fx.sprite(d.p, 0.03, cam, [0.85, 0.93, 1.0, 1.2]); }
+    if (R2.length > 200) R2.splice(0, R2.length - 200);
+    // 长瀑落进云里的地方：几团慢慢翻滚、往下沉的水雾
+    for (const m of (world.fallMist || [])) {
+      if (v3.dist(m.p, cam.pos) > 9000) continue;
+      for (let k = 0; k < 9; k++) { const ph = (G.time * 0.05 + k / 9) % 1, a = k * 2.4; const q = [m.p[0] + Math.cos(a) * m.w * 0.5 * (0.4 + ph), m.p[1] - ph * 260 + 80, m.p[2] + Math.sin(a) * m.w * 0.5 * (0.4 + ph)]; fx.sprite(q, m.w * (0.45 + ph * 0.7), cam, [0.9, 0.93, 0.95, 0.07 * Math.sin(ph * Math.PI)], 4); }
+    }
+  }
+  if (P.state !== 'idle' && P.state !== 'walk' && hero.fx) {
     // v1.6 剑气（V 开关）：剑后三道流光（中间一道淡青、两侧两道淡金），都按长度截断，快慢都只是剑后一截；
     // 再从剑身两侧不断抖落细小的光屑，留在原地慢慢散开、熄灭。疾行时更亮、光屑更多
     const sp = smoothstep(20, 300, P.speed), bo = P.boosting ? 1 : 0;
