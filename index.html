@@ -2283,11 +2283,15 @@ out vec3 vWorld; out vec3 vNormal; out vec3 vLocal; out vec2 vUv; out vec4 vMat;
 out vec4 vCur; out vec4 vPrev; out float vViewZ;
 // v1.0 镜面水池的倒影（形变 10）：实例矩阵已经关于水面（y = uDeformP.x）上下翻转；这里再把每个顶点沿视线压回水面——
 // 屏幕上的位置不变，深度变成“水面稍前一点”，于是倒影画在水面之上、又和水面严丝合缝。越靠近水面的部分往镜头拉得越多，倒影自身的前后关系不乱
-vec3 mirrorProj(vec3 p) {
-  vec3 d = p - uCamPos;
-  if (uCamPos.y <= uDeformP.x || d.y > -1e-3) return p;
-  float s = clamp((uDeformP.x - uCamPos.y) / d.y, 0.0, 1.0);
-  return uCamPos + d * s * (1.0 - 0.003 * s);
+// v1.9：倒影之间的前后关系改用“翻转后真实的距离”编码（越近的倒影越往镜头拉一点），和镜头离水面多高无关——
+// 原来用 0.003·s，人落到水面上（镜头只高两三米）时 s 极小，倒影彼此的深度几乎相同，于是互相打架、闪烁、破洞
+uniform vec3 uPrevCamPos;
+vec3 mirrorProj(vec3 p, vec3 cp) {
+  vec3 d = p - cp;
+  if (cp.y <= uDeformP.x || d.y > -1e-3) return p;
+  float s = clamp((uDeformP.x - cp.y) / d.y, 0.0, 1.0);
+  float f = 1.0 - 0.004 / (1.0 + length(d) / 80.0) - 0.0005;
+  return cp + d * s * f;
 }
 void main() {
   vec3 wp, wn, wp0, wn0;
@@ -2296,7 +2300,7 @@ void main() {
   vec4 w = uModel * vec4(wp, 1.0);
   vec4 w0 = uPrevModel * vec4(wp0, 1.0);
   vWorld = w.xyz; vNormal = mat3(uModel) * wn; vLocal = aPos; vUv = aUv; vMat = aMat; vIP = aIP;
-  if (uDeform == 10) { w.xyz = mirrorProj(w.xyz); w0.xyz = mirrorProj(w0.xyz); }
+  if (uDeform == 10) { w.xyz = mirrorProj(w.xyz, uCamPos); w0.xyz = mirrorProj(w0.xyz, uPrevCamPos); }
   vViewZ = dot(w.xyz - uCamPos, uCamFwd);
   gl_Position = uViewProj * w;
   vCur = uViewProjNJ * w; vPrev = uPrevViewProjNJ * w0;
@@ -3834,6 +3838,7 @@ class Renderer {
     const jx = (halton((this.frame % 16) + 1, 2) - 0.5) * 2 / this.w, jy = (halton((this.frame % 16) + 1, 3) - 0.5) * 2 / this.h;
     cam.revZ = this.revZ; cam.aspect = this.w / this.h;
     cam.update(env.noJitter ? 0 : jx, env.noJitter ? 0 : jy);
+    F.uPrevCamPos = this._pcp || cam.pos.slice(); this._pcp = cam.pos.slice();      // v1.9 水镜倒影的上一帧投影要用上一帧的镜头位置
     F.uCamPos = cam.pos; F.uCamRight = cam.right; F.uCamUp = cam.up; F.uCamFwd = cam.fwd;
     F.uTanHalf = cam.tanHalf; F.uJitter = cam.jitter;
     F.uViewProj = cam.viewProj; F.uViewProjNJ = cam.viewProjNoJitter; F.uPrevViewProjNJ = cam.prevViewProjNoJitter;
@@ -6190,6 +6195,7 @@ function buildWorld(gl, onProgress = () => {}) {
     add(g, [T(gx, by, gz, yaw)], { name: 'G.bridge', feature: 300 }); const g0Bridge = g;
     const cols = []; for (let i = 1; i <= 7; i++) { const d = -i * 420; cols.push(TS(gx + d * s, by - 40 - 1300, gz + d * c, yaw, 1.6, 3.1, 1.6)); }
     add(P.column, cols, { name: 'G.piers', feature: 300 });
+    for (const m of cols) col({ t: 'cyl', c: [m[12], m[14]], r: 30, y0: m[13] - 50, y1: by - 40 });      // v1.9 桥墩也挡人（落地走路时不再穿过去）
     add(P.hallL, [T(gx + 60 * s, by, gz + 60 * c, yaw, 13)], { name: 'G.hall', feature: 400 });
     add(P.tower7, [T(gx + (-900) * s - 210 * c, by, gz + (-900) * c + 210 * s, yaw, 8), T(gx + (-900) * s + 210 * c, by, gz + (-900) * c - 210 * s, yaw, 8)], { name: 'G.towers', feature: 200 });
     obb([gx - 1500 * s, by - 20, gz - 1500 * c], [95, 24, 1650], yaw);
@@ -6565,7 +6571,7 @@ class Player {
       let tx = fx * mv + rx * st, tz = fz * mv + rz * st; const tl = Math.hypot(tx, tz); if (tl > 1) { tx /= tl; tz /= tl; }
       this.walkV[0] = damp(this.walkV[0], tx * spd, 9, dt); this.walkV[1] = damp(this.walkV[1], tz * spd, 9, dt);
       const p = this.pos; p[0] += this.walkV[0] * dt; p[2] += this.walkV[1] * dt;
-      const body = [p[0], p[1] + 1.0, p[2]]; collide(W, body, 0.45); p[0] = body[0]; p[2] = body[2];
+      const body = [p[0], p[1] + 1.0, p[2]]; collide(W, body, 0.8); p[0] = body[0]; p[2] = body[2];
       const g = groundAt(W, p[0], p[1] + 1.2, p[2]);
       if (g !== null && p[1] - g < 1.5 && this.vy <= 0.1) { p[1] = g; this.vy = 0; this.onGround = true; this.landing = false; }
       else { this.onGround = false; this.vy -= 22 * dt; if (this.landing) this.vy = Math.max(this.vy, -32);      // 收剑落下：限速，落地前不会被当成“掉下去”
@@ -6689,6 +6695,11 @@ class Player {
     if (this.state === 'launch' && this._cp) {
       const k = smoothstep(0, 1, this.t / 2.4);
       cp = v3.lerp(this._cp, cp, k); tgt = v3.lerp(this._ct, tgt, k);
+    }
+    // v1.9 镜头不穿墙：从人物头部往镜头位置走几步，碰到碰撞体就把镜头收到碰撞点之前（走路时尤其要紧）
+    if (this.state === 'walk' || this.state === 'fly') {
+      const hd = [this.pos[0], this.pos[1] + 1.6, this.pos[2]], dv = v3.sub(cp, hd), L = v3.len(dv);
+      for (let i = 1; i <= 10; i++) { const k = i / 10, q = v3.addScaled(hd, dv, k), q0 = q.slice(); collide(W, q, 0.6); if (v3.dist(q, q0) > 1e-3) { cp = v3.addScaled(hd, dv, Math.max(0.12, k - 0.12)); break; } }
     }
     cam.setLook(cp, v3.sub(tgt, cp), this.roll * 0.32 * (this.state === 'launch' ? smoothstep(0, 1, this.t / 2.4) : 1), up);
     if (wk) this.fov = damp(this.fov, 62 * DEG, 3, dt);
