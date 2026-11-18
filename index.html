@@ -2454,8 +2454,10 @@ uniform int uDeform; uniform vec4 uDeformP; uniform vec4 uDeformQ;
 // v2.5 以前通体一个色 (1.0, 0.72, 0.27)、没有暗部，大块光面只映天——读成塑料镀金。这里凸处偏橙的亮金，凹处压到近黑褐、也更粗糙
 void tgGold(float relief, float g, out vec3 alb, out float rough) {
   float r = clamp(relief, 0.0, 1.0);
-  alb = mix(vec3(0.07, 0.035, 0.012), vec3(0.98, 0.64, 0.24), r * r * (3.0 - 2.0 * r)) * (0.86 + 0.24 * g);
-  rough = mix(0.70, 0.26, r) + 0.08 * g;      // 粗糙一点：太光的金只映天，偏青偏白
+  float rr = r * r * (3.0 - 2.0 * r);
+  alb = mix(vec3(0.030, 0.013, 0.005), vec3(0.50, 0.24, 0.07), smoothstep(0.0, 0.55, rr));      // v4.2（用户：柱础金比参考的橙黄假）：凹处压到近黑的泥金，中间调是暗橙铜
+  alb = mix(alb, vec3(0.94, 0.60, 0.22), smoothstep(0.5, 1.0, rr)) * (0.86 + 0.24 * g);      // 只有凸起的高光是亮橙金
+  rough = mix(0.72, 0.30, rr) + 0.08 * g;      // 粗糙一点：太光的金只映天，偏青偏白
 }
 float tgRect(vec2 c, vec4 r) { return step(r.x, c.x) * step(c.x, r.z) * step(r.y, c.y) * step(c.y, r.w); }
 // 回纹：一格一个钩，底边连到下一格
@@ -2813,7 +2815,7 @@ void main() {
       float fd = 1.0 - smoothstep(0.12, 0.45, fw * sA);
       float g = fbm3(P * 2.0);
       float relief = mix(0.5, 0.25 + 0.75 * tgSpiral(q), fd);
-      tgGold(relief, g, albedo, rough); metal = smoothstep(0.12, 0.5, relief);      // v2.6：凹处不当金属（积了暗色的泥金）——否则暗部也满映天光，读成整块亮金
+      tgGold(relief, g, albedo, rough); metal = smoothstep(0.35, 0.8, relief);      // v2.6：凹处不当金属（积了暗色的泥金）——否则暗部也满映天光，读成整块亮金
       bumpH = relief * 1.4 * fd; bumpK = 0.22; ao *= mix(1.0, 0.6 + 0.4 * relief, fd);
     } else if (k == 3) {
       // 米色石板：长方错缝的大板 + 近处才见的小缝。参数 A = 板宽（模型单位）
@@ -2856,37 +2858,32 @@ void main() {
       metal = gd; rough = mix(0.55, 0.28, gd);
       bumpH = relief * fd * 1.4; bumpK = 0.18;
     } else if (k == 9) {
-      // v2.5 广场：错缝条石（参考视频 1 的 R2、R6；v2.4 是 64 米方格再分 4×4，像坐标纸）。参数 A = sl（米）。
-      // 一行一行铺：行缝在 (i ± 0.18) × 1.1 sl 处抖动 → 行高 0.9–1.3 sl；每行里块缝在 (j ± 0.37) × 1.9 sl 处抖动 → 块长 1.2–2.6 sl；每行整体错开一个随机量。
-      // 缝细（约 0.004 sl）、只比石面暗两三成、远了淡出；每块深浅 ±7%、略带冷暖；沿缝一圈略浅（磨圆的棱）
-      float sl = max(vMat.z, 4.0);
-      float py = 1.1 * sl, yq = uv.y / py, i0 = floor(yq);
-      float row = i0 - step(yq, i0 + 0.36 * (hash21(vec2(i0, 11.0)) - 0.5)) + step(i0 + 1.0 + 0.36 * (hash21(vec2(i0 + 1.0, 11.0)) - 0.5), yq);
-      float r0 = row + 0.36 * (hash21(vec2(row, 11.0)) - 0.5), r1 = row + 1.0 + 0.36 * (hash21(vec2(row + 1.0, 11.0)) - 0.5);
-      float dyM = min(yq - r0, r1 - yq) * py;
-      float px = 1.9 * sl, xq = uv.x / px + 7.0 * hash21(vec2(row, 3.0)), j0 = floor(xq);
-      float jj = j0 - step(xq, j0 + 0.74 * (hash21(vec2(j0, row + 17.0)) - 0.5)) + step(j0 + 1.0 + 0.74 * (hash21(vec2(j0 + 1.0, row + 17.0)) - 0.5), xq);
-      float c0 = jj + 0.74 * (hash21(vec2(jj, row + 17.0)) - 0.5), c1 = jj + 1.0 + 0.74 * (hash21(vec2(jj + 1.0, row + 17.0)) - 0.5);
-      float dxM = min(xq - c0, c1 - xq) * px;
-      float d = min(dxM, dyM), sw = 0.007 * sl;
+      // v4.2 广场（用户 11-19：地板按参考 R2、R6 再优化）：双尺度的方石板——主板是 sl/2 见方的正方板（v2.5–v4.1 是错缝条石），
+      // 每 4×4 块围一道宽一倍多、更深的分格缝（远处看得出“格子地”的大节奏，近处是一块块板）；逐块深浅 ±14%、冷暖略偏，每个大格整体再差一点。参数 A = sl（米）
+      float sl = max(vMat.z, 4.0), ps = 0.5 * sl, PS = 4.0 * ps;
+      vec2 q = uv / ps, f = fract(q), dd = min(f, 1.0 - f) * ps;
+      vec2 Q = uv / PS, Fq = fract(Q), DD = min(Fq, 1.0 - Fq) * PS;
+      float sw = 0.016 * ps, SW = 0.05 * ps;
       // 两个方向的缝各用自己方向的像素尺寸做抗锯齿：贴地看时纵向的 fw 很大，用 max 会把横缝也一起抹掉
-      float sx = (1.0 - smoothstep(sw * 0.5, sw * 0.5 + fwU * 1.2, dxM)) * (1.0 - smoothstep(0.03, 0.2, fwU / sl));
-      float sy = (1.0 - smoothstep(sw * 0.5, sw * 0.5 + fwV * 1.2, dyM)) * (1.0 - smoothstep(0.03, 0.2, fwV / sl));
-      float seam = max(sx, sy);
-      float bev = (1.0 - smoothstep(sw, sw + 0.014 * sl + fw, d)) * (1.0 - seam) * (1.0 - smoothstep(0.004, 0.03, fw / sl));
-      vec2 bid = vec2(jj, row);
-      float h = hash21(bid + 0.37), hc = hash21(bid + 5.1);
+      float sx = (1.0 - smoothstep(sw * 0.5, sw * 0.5 + fwU * 1.2, dd.x)) * (1.0 - smoothstep(0.03, 0.2, fwU / ps));
+      float sy = (1.0 - smoothstep(sw * 0.5, sw * 0.5 + fwV * 1.2, dd.y)) * (1.0 - smoothstep(0.03, 0.2, fwV / ps));
+      float Sx = (1.0 - smoothstep(SW * 0.5, SW * 0.5 + fwU * 1.2, DD.x)) * (1.0 - smoothstep(0.02, 0.12, fwU / PS));
+      float Sy = (1.0 - smoothstep(SW * 0.5, SW * 0.5 + fwV * 1.2, DD.y)) * (1.0 - smoothstep(0.02, 0.12, fwV / PS));
+      float seam = max(sx, sy), seamB = max(Sx, Sy);
+      float d = min(dd.x, dd.y);
+      float bev = (1.0 - smoothstep(sw, sw + 0.03 * ps + fw, d)) * (1.0 - seam) * (1.0 - smoothstep(0.004, 0.03, fw / ps));
+      vec2 bid = floor(q);
+      float h = hash21(bid + 0.37), hc = hash21(bid + 5.1), hb = hash21(floor(Q) + 2.3);
       float g = fbm3(P * 0.7), st = fbm3(P * 0.012 + 3.0), fine = fbm3(P * 3.1);
-      albedo = mix(vec3(0.70, 0.56, 0.37), vec3(0.80, 0.67, 0.46), g * 0.7 + 0.15);
+      albedo = mix(vec3(0.72, 0.58, 0.38), vec3(0.82, 0.69, 0.48), g * 0.7 + 0.15);
       albedo = mix(albedo, albedo * vec3(0.82, 0.79, 0.74), smoothstep(0.45, 0.8, st) * 0.4);
-      albedo *= (0.88 + 0.24 * h) * mix(vec3(1.04, 1.0, 0.94), vec3(0.965, 0.99, 1.04), hc);      // v2.8：逐板色差再拉开（复评：亮处暗处都要能分出相邻的石板）
+      albedo *= (0.86 + 0.28 * h) * mix(vec3(1.05, 1.0, 0.93), vec3(0.96, 0.99, 1.05), hc) * (0.95 + 0.10 * hb);
       albedo *= 0.96 + 0.08 * fine * (1.0 - smoothstep(0.02, 0.15, fw));
-      if (fw < 0.5) albedo *= 0.95 + 0.10 * n3(vec3(uv * vec2(0.09, 0.3) / max(sl * 0.01, 0.01), h * 17.0)) * (1.0 - smoothstep(0.05, 0.5, fw));      // v2.9：板内顺纹的石纹，近处才见（用单层噪声：fbm 在俯瞰满屏是地板时贵了一成多）
-      // v3.2 复评 B3：低频的暖色差与磨亮（几十米一片：人常走的地方偏暖偏亮、略光，背阴的角偏灰）；缝的对比压一点，网格不那么像坐标纸
+      if (fw < 0.5) albedo *= 0.95 + 0.10 * n3(vec3(uv * vec2(0.09, 0.3) / max(sl * 0.01, 0.01), h * 17.0)) * (1.0 - smoothstep(0.05, 0.5, fw));
       float lf = fbm3(P * 0.0045 + 9.0);
       albedo *= mix(vec3(0.90, 0.89, 0.88), vec3(1.08, 1.02, 0.93), smoothstep(0.25, 0.8, lf));
-      albedo *= (1.0 - 0.22 * seam) * (1.0 + 0.11 * bev);
-      rough = 0.56 + 0.2 * g - 0.14 * smoothstep(0.55, 0.85, lf); bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 + bev * 0.3; bumpK = 0.03;
+      albedo *= (1.0 - 0.32 * seam) * (1.0 - 0.42 * seamB) * (1.0 + 0.12 * bev);
+      rough = 0.56 + 0.2 * g - 0.14 * smoothstep(0.55, 0.85, lf); bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 - seamB * 2.0 + bev * 0.3; bumpK = 0.03;
     } else if (k == 8) {
       // v2.5 斗拱构件：深褐近黑的木（参数 A 选偏黑 / 偏红褐），一圈细金边（v2.4 的七成），不要白线、不要退晕的青绿——
       // 参考视频 1 的檐下是全殿最暗的一带，暗里只有碎金
@@ -2922,7 +2919,7 @@ void main() {
       float border = 1.0 - smoothstep(0.05, 0.09, min(yy, 1.0 - yy));
       float g = fbm3(P * 1.7);
       float relief = mix(0.5, max(0.22 + 0.78 * s, border), fd);
-      tgGold(relief, g, albedo, rough); metal = smoothstep(0.12, 0.5, relief);
+      tgGold(relief, g, albedo, rough); metal = smoothstep(0.35, 0.8, relief);
       bumpH = relief * 1.5 * fd; bumpK = 0.25; ao *= mix(1.0, 0.5 + 0.5 * relief, fd);
     } else if (k == 12) {
       // v2.6 暗青玉（柱础上一道细玉环、倒垂金叶的叶心）
@@ -2941,7 +2938,7 @@ void main() {
       relief = max(relief, rim);
       relief = mix(relief, 0.04, groove);
       relief = mix(relief, 0.9, tear);
-      tgGold(relief, g, albedo, rough); metal = smoothstep(0.12, 0.5, relief);
+      tgGold(relief, g, albedo, rough); metal = smoothstep(0.35, 0.8, relief);
       if (vMat.z > 0.5) { albedo = mix(albedo, vec3(0.035, 0.15, 0.13) * (0.8 + 0.4 * g), tear); metal = min(metal, 1.0 - tear); rough = mix(rough, 0.22, tear); }
       bumpH = relief * 1.2; bumpK = 0.2; ao *= 0.55 + 0.45 * relief;
     } else if (k == 14) {
@@ -5529,7 +5526,7 @@ const MIRROR = { cx: -700, y: 2300, w: 1120, z0: 25950, z1: 29050, ledgeY: 1560,
 // 廊脚 yFoot、檐口 yEave；内外两排柱相距 depth；柱距 sp
 const ARC0 = { cx: -6300, cz: 12300, R: 4300, a0: -0.68, a1: 0.68, yFoot: 1420, yEave: 2280, depth: 210, sp: 52 };      // v4.0 以前的位置：只给 inForest 用（它决定标题画面里山和岛的分批）
 const ARC = { cx: -11200, cz: 12600, R: 4300, a0: -0.45, a1: 0.45, yFoot: 1420, yEave: 2280, depth: 210, sp: 52 };      // v4.1：西移让出视线
-const ARC_E = { cx: 2 * -3400 + 11200, cz: 12600, R: 4300, a0: Math.PI - 0.45, a1: Math.PI + 0.45, yFoot: 1150, yEave: 1850, depth: 210, sp: 52 };      // v4.1：东侧镜像（矮些，顶不过 1900）
+const ARC_E = { cx: 2 * -3400 + 11200, cz: 12600, R: 4300, a0: Math.PI - 0.30, a1: Math.PI + 0.36, yFoot: 1000, yEave: 1500, depth: 210, sp: 52 };      // v4.1b 复评：北端退两个开间、檐降两成（从万廊一侧看别挡门环下缘）      // v4.1：东侧镜像（矮些，顶不过 1900）
 // v1.1 墙中殿：墙中心 x、厚 th，沿 z 从 z0 到 z1，高 yB..yT；方洞 oz0..oz1 × oy0..oy1，洞后殿室深 depth；墙脚石台宽 ledge、台面高 ledgeY
 const WALLHALL = { x: -1950, th: 220, z0: 31200, z1: 35200, yB: 300, yT: 3300, oz0: 32250, oz1: 34550, oy0: 2120, oy1: 2900, depth: 1050, ledge: 380, ledgeY: 960 };
 // v1.0 千柱林（参考帧“圆门千柱”）：登天阶前、两尊镇阶石像之前。素门在 z = gz，柱林 z0..z1，巷子沿 +z 直通登天阶的起步
@@ -6839,28 +6836,31 @@ function buildWorld(gl, onProgress = () => {}) {
     { const SMv = K.SUMEN, ctY = SMv.yT + 150, cq = new Geo();
       add(TK.tgPlatformGeo(SMv.W + 60, SMv.TH + 520, { H: 150, slab: 40 }), [T(F.cx, ctY, F.gz, 0)], { name: 'S.chengtai', feature: 900 });
       obb([F.cx, ctY - 75, F.gz], [SMv.W / 2 + 30, 75, SMv.TH / 2 + 260]);
-      const HS = 46; add(TK.tgHallGeo({ nx: 15, nz: 3 }), [T(F.cx, ctY, F.gz, 0, HS)], { name: 'S.tower', feature: 900 });
-      obb([F.cx, ctY + 16 * HS, F.gz], [33 * HS, 16 * HS, 9 * HS]);
+      const HS = 46; add(TK.tgHallGeo({ nx: 15, nz: 3 }), [TS(F.cx, ctY, F.gz, 0, HS, HS * 1.22, HS)], { name: 'S.tower', feature: 900 });      // v4.1b 复评：楼身拉高两成，压住两侧阙楼
+      obb([F.cx, ctY + 16 * HS * 1.22, F.gz], [33 * HS, 16 * HS * 1.22, 9 * HS]);
       for (const sx of [-1, 1]) { cq.push(m4.translate(m4.create(), sx * (SMv.W / 2 - 600), 0, 0)); TK.tgRoof(cq, { W: 1200, D: SMv.TH + 520, H: 150, y: ctY + 2, up: 40, tile: 9, nu: 40, nv: 4, top: true, thick: 6, rafter: 6, ridgeH: 14 }); cq.pop(); }
       add(cq, [T(F.cx, 0, F.gz, 0)], { name: 'S.capRoof', feature: 600 });
       // 子母阙：门前两侧（x ±3100，离墙 450 米），白石台身从云里砌到 4300，上压一座五层楼阁
       const qL = [], QS = 24, qz = F.gz - 450;
-      for (const sx of [-1, 1]) { const x = F.cx + sx * 3100; add(TK.tgMassifGeo(700, 700, 3600, 0.04), [T(x, 4300, qz, 0)], { name: 'S.queBase', feature: 900 }); obb([x, 2500, qz], [360, 1800, 360]);
-        qL.push(TS(x, 4300, qz, 0, QS * 1.15, QS, QS * 1.15)); obb([x, 4300 + 23.8 * QS, qz], [6.5 * QS * 1.15, 23.8 * QS, 6.5 * QS * 1.15]); }
+      for (const sx of [-1, 1]) { const x = F.cx + sx * 3100, yq = 3400;      // v4.1b 复评：台身压低（4300 → 3400）、分两级收（母阙身宽、子阙身窄）
+        add(TK.tgMassifGeo(820, 820, 1700, 0.05), [T(x, 2400, qz, 0)], { name: 'S.queBase', feature: 900 }); add(TK.tgMassifGeo(640, 640, 1010, 0.03), [T(x, yq, qz, 0)], { name: 'S.queBase', feature: 900 });
+        obb([x, 1550, qz], [420, 850, 420]); obb([x, 2900, qz], [330, 500, 330]);
+        qL.push(TS(x, yq, qz, 0, QS * 1.15, QS, QS * 1.15)); obb([x, yq + 23.8 * QS, qz], [6.5 * QS * 1.15, 23.8 * QS, 6.5 * QS * 1.15]); }
       add(TK.tgPagodaGeo({ tiers: 5 }), qL, { name: 'S.que', feature: 500, shadow: false });
       // 门洞内壁的暖光：一圈自发光的环带（比洞壁略小一点，贴着）
       const gg = new Geo(); gg.mat(MAT.GLOW, 1, 3.2, 0);
       gg.surf(128, 1, (u, v) => { const a = u * Math.PI * 2, r = SMv.R - 4; return [Math.cos(a) * r, SMv.yc + Math.sin(a) * r, lerp(-SMv.TH / 2 + 175, SMv.TH / 2 - 10, v)]; }, { flip: true });
+      gg.mat(MAT.GLOW, 1, 0.55, 0); gg.surf(128, 1, (u, v) => { const a = u * Math.PI * 2, r = lerp(SMv.R + 2, SMv.R + 58, v); return [Math.cos(a) * r, SMv.yc + Math.sin(a) * r, -SMv.TH / 2 + 109]; });      // v4.1b：最里一道券面也染一层暖光（门里的光溢到券石上）
       add(gg, [{ m: T(F.cx, 0, F.gz, 0), p: [1, 0, 1, 0] }], { name: 'S.glow', feature: 600, shadow: false });
       // 巷里两排宫灯（白天也亮）
       const lh = []; for (let z = F.z0 + 30; z < F.z1 - 200; z += 132) for (const sx of [-1, 1]) for (const [yy, ox, sc] of [[1010, 40, 34], [1750, 30, 40], [2600, 20, 46]]) lh.push(T(F.cx + sx * (F.lane - ox), yy + 25 * Math.sin(z * 0.01 + yy), z, 0, sc));      // 三层：贴航线一层，上面两层把整条巷子点亮
       add(P.lanternHot, lh, { name: 'S.laneLanterns', feature: 20, maxDist: 9000, shadow: false });
       // 门前中轴：十二对孔明灯，从 z 12500 收到门口（左右距离 1100 → 700，高度 1250 → 950）
-      const sl = []; for (let k = 0; k < 12; k++) { const t = k / 11, z = 12500 + t * (F.gz - 200 - 12500), w = lerp(1100, 700, t), y = lerp(1250, 950, t); for (const sx of [-1, 1]) sl.push(T(F.cx + sx * w, y + 30 * Math.sin(k * 1.7 + sx), z, k * 0.7, 60)); }
+      const sl = []; for (let k = 0; k < 16; k++) { const t = k / 15, z = 9200 + t * (F.gz - 200 - 9200), w = lerp(1400, 700, t), y = lerp(1500, 950, t); for (const sx of [-1, 1]) sl.push(T(F.cx + sx * w, y + 30 * Math.sin(k * 1.7 + sx), z, k * 0.7, 60)); }      // v4.1b：从 z 9200 就开始（过天柱就能看到灯列）
       add(P.skyLanternHot, sl, { name: 'S.skyLanterns', feature: 20, maxDist: 16000, shadow: false });
       // 夹道楼阁（简模，不投影）：z 12600 / 13800 / 15000，越往门越矮、越往里收
       const pv7 = [], pv5 = [], pvP = [];
-      for (const [z, dxp, top, tiers] of [[12600, 2600, 3200, 7], [13800, 2350, 2600, 7], [15000, 2100, 2000, 5]]) for (const sx of [-1, 1]) {
+      for (const [z, dxp, top, tiers] of [[12600, 2650, 3200, 7], [13800, 2500, 2600, 7], [15000, 2400, 2000, 5]]) for (const sx of [-1, 1]) {      // v4.1b 复评：近门那对外挪，别叠在门环上
         const x = F.cx + sx * dxp, y0 = 1080, Hh = tiers === 7 ? 60.4 : 47.6, sc = (top - y0) / Hh, w = sc * 1.2;
         (tiers === 7 ? pv7 : pv5).push(TS(x, y0, z, 0, w, sc, w)); pvP.push([x, y0, z, 11.4 * w * 2 + 80]);
         obb([x, y0 + 1.2 * sc, z], [11.4 * w, 1.2 * sc, 11.4 * w]); obb([x, y0 + (2.4 + Hh) / 2 * sc, z], [5.6 * w, (Hh - 2.4) / 2 * sc, 5.6 * w]); obb([x, y0 - 65, z], [pvP[pvP.length - 1][3] / 2, 65, pvP[pvP.length - 1][3] / 2]);
@@ -7218,7 +7218,10 @@ function buildWorld(gl, onProgress = () => {}) {
       for (const [x, y, z, s, t, yaw] of [[dx - 1500, FY + 200, 28600, 16, 7, 0.4], [dx + 1450, FY + 120, 28700, 15, 7, -0.3], [dx - 1900, FY + 420, 29700, 18, 9, 0], [dx + 700, FY + 380, 30300, 17, 7, 0.785], [dx - 300, FY + 520, 31000, 20, 9, 0.2], [dx + 1900, FY + 300, 30700, 15, 5, 0.6]]) {
         islandF(x, y, z, 600); putP(t === 9 ? p9L : t === 7 ? p7L : p5L, x, y, z, s, t === 9 ? 73.2 : t === 7 ? 60.4 : 47.6, yaw);
       }
-      add(TK.tgPagodaGeo({ tiers: 9, lod: true }), p9L, { name: 'D2.pagoda9L', feature: 400, shadow: false });
+      // v4.2（用户：塔造型重复、像堆出来的）：远处的简模塔分成五种原型——矮胖九层 / 宽檐九层 / 高瘦七层 / 宽五层 / 三层楼阁，相邻两座不用同一种
+      const pgV = (o) => TK.tgPagodaGeo(Object.assign({ lod: true }, o)), odd = (L, r) => L.filter((_, i) => i % 2 === r);
+      add(pgV({ tiers: 9, taper: 0.86, th: 4.4, w: 12 }), odd(p9L, 0), { name: 'D2.pagoda9L', feature: 400, shadow: false });
+      add(pgV({ tiers: 9, taper: 0.93, th: 3.9, w: 13.5 }), odd(p9L, 1), { name: 'D2.pagoda9bL', feature: 400, shadow: false });      // 十一层密檐试过：檐小身白，远看像灯塔，改成檐宽身矮的九层
       // v3.0 南天门台子的南边两角各一座全模楼阁（参考 R4：门两侧近景的重檐楼阁切进画框，后面压着更高的阙楼——前低后高两层）。
       //   v2.9 是浮在阶顶两侧悬台上的简模，R4 机位看不到、阶上看是两块浮板（复评说抢眼）
       const WP = [[600, 24950, 8, 7, 10], [-630, 24985, 13.5, 16.5, 13.5]];      // v3.2：再加高到 16.5（复评：上层檐要进画面上半）      // v3.1：西边（R4 画面右侧）那座放大（参考 R4 右侧近景楼阁从上到下切进画框，左侧轻）
@@ -7235,7 +7238,8 @@ function buildWorld(gl, onProgress = () => {}) {
       add(pg5, [TS(dx - 800, FY, 26470, 0, 9, 8.5, 15)], { name: 'D2.pavW', feature: 300 }); obb([dx - 800, FY + 47.6 * 8.5 / 2, 26470], [11.4 * 9, 47.6 * 8.5 / 2, 11.4 * 15]);
       add(pg7, p7F, { name: 'D2.pagoda7F', feature: 400, shadow: false });
       for (const [x, y, z, w] of platsF) add(TK.tgPlatformGeo(w, w, { H: 130, slab: 8 }), [T(x, y, z, 0)], { name: 'D2.isleF', feature: 500, shadow: false });
-      add(TK.tgPagodaGeo({ tiers: 7, lod: true }), p7L, { name: 'D2.pagoda7L', feature: 400, shadow: false }); add(TK.tgPagodaGeo({ tiers: 5, lod: true }), p5L, { name: 'D2.pagoda5L', feature: 300, shadow: false });
+      add(pgV({ tiers: 7, taper: 0.94, th: 5.2, w: 10 }), odd(p7L, 0), { name: 'D2.pagoda7L', feature: 400, shadow: false }); add(pgV({ tiers: 5, taper: 0.82, th: 6.2, w: 13 }), odd(p7L, 1), { name: 'D2.pagoda5wL', feature: 400, shadow: false });
+      add(pgV({ tiers: 3, taper: 0.8, th: 7.0, w: 15 }), p5L.slice(0, 2), { name: 'D2.pagoda3L', feature: 300, shadow: false }); add(pgV({ tiers: 5 }), p5L.slice(2), { name: 'D2.pagoda5L', feature: 300, shadow: false });      // 阶顶两侧那一对保持对称
       { const hx2 = dx - 1300, hy2 = FY + 420, hz2 = 31400, S2 = 20;
         add(TK.tgPlatformGeo(1500, 820, { H: 170, slab: 72 }), [T(hx2, hy2, hz2, 0)], { name: 'D2.farPlat', feature: 700 }); obb([hx2, hy2 - 85, hz2], [750, 85, 410]);
         add(TK.tgHallGeo({ nx: 11, nz: 5, lod: true }), [T(hx2, hy2, hz2, 0, S2)], { name: 'D2.farHall', feature: 500, shadow: false });
