@@ -2882,8 +2882,11 @@ void main() {
       albedo *= (0.88 + 0.24 * h) * mix(vec3(1.04, 1.0, 0.94), vec3(0.965, 0.99, 1.04), hc);      // v2.8：逐板色差再拉开（复评：亮处暗处都要能分出相邻的石板）
       albedo *= 0.96 + 0.08 * fine * (1.0 - smoothstep(0.02, 0.15, fw));
       if (fw < 0.5) albedo *= 0.95 + 0.10 * n3(vec3(uv * vec2(0.09, 0.3) / max(sl * 0.01, 0.01), h * 17.0)) * (1.0 - smoothstep(0.05, 0.5, fw));      // v2.9：板内顺纹的石纹，近处才见（用单层噪声：fbm 在俯瞰满屏是地板时贵了一成多）
-      albedo *= (1.0 - 0.30 * seam) * (1.0 + 0.09 * bev);
-      rough = 0.56 + 0.2 * g; bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 + bev * 0.3; bumpK = 0.03;
+      // v3.2 复评 B3：低频的暖色差与磨亮（几十米一片：人常走的地方偏暖偏亮、略光，背阴的角偏灰）；缝的对比压一点，网格不那么像坐标纸
+      float lf = fbm3(P * 0.0045 + 9.0);
+      albedo *= mix(vec3(0.90, 0.89, 0.88), vec3(1.08, 1.02, 0.93), smoothstep(0.25, 0.8, lf));
+      albedo *= (1.0 - 0.22 * seam) * (1.0 + 0.11 * bev);
+      rough = 0.56 + 0.2 * g - 0.14 * smoothstep(0.55, 0.85, lf); bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 + bev * 0.3; bumpK = 0.03;
     } else if (k == 8) {
       // v2.5 斗拱构件：深褐近黑的木（参数 A 选偏黑 / 偏红褐），一圈细金边（v2.4 的七成），不要白线、不要退晕的青绿——
       // 参考视频 1 的檐下是全殿最暗的一带，暗里只有碎金
@@ -7169,7 +7172,7 @@ function buildWorld(gl, onProgress = () => {}) {
       add(TK.tgPagodaGeo({ tiers: 9, lod: true }), p9L, { name: 'D2.pagoda9L', feature: 400, shadow: false });
       // v3.0 南天门台子的南边两角各一座全模楼阁（参考 R4：门两侧近景的重檐楼阁切进画框，后面压着更高的阙楼——前低后高两层）。
       //   v2.9 是浮在阶顶两侧悬台上的简模，R4 机位看不到、阶上看是两块浮板（复评说抢眼）
-      const WP = [[600, 24950, 8, 7, 10], [-630, 24985, 13, 13, 13]];      // v3.1：西边（R4 画面右侧）那座放大（参考 R4 右侧近景楼阁从上到下切进画框，左侧轻）
+      const WP = [[600, 24950, 8, 7, 10], [-630, 24985, 13.5, 16.5, 13.5]];      // v3.2：再加高到 16.5（复评：上层檐要进画面上半）      // v3.1：西边（R4 画面右侧）那座放大（参考 R4 右侧近景楼阁从上到下切进画框，左侧轻）
       for (const [x, z, a, b, c] of WP) { obb([dx + x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * c]); obb([dx + x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * c]); }
       add(pg5, WP.map(([x, z, a, b, c]) => TS(dx + x, FY, z, 0, a, b, c)), { name: 'D2.wingPav', feature: 300 });
       // v3.0 大殿背后一座宽的七层楼阁（七层塔沿 x 拉宽成楼），立在薄台上：从广场北望、从 R3 仰望，大殿屋脊后面又压出一层层错高的檐（参考 R3、R4）
@@ -7264,12 +7267,13 @@ function buildWorld(gl, onProgress = () => {}) {
       add(TK.tgGalleryGeo(26), [T(dx - 915, FY, 26485, -Math.PI / 2, 6), T(dx + 915, FY, 26485, Math.PI / 2, 6)], { name: 'D2.gallery', feature: 60, maxDist: 15000 });
       for (const sx of [-1, 1]) obb([dx + sx * 915, FY + 46, 26485], [30, 16, 350]);
       // v2.3 天女：照参考视频 1 里那位汉服女子（Tripo 模型）。视频里人只到柱础一半高——这里的柱础八十多米，所以她身高四十六米，
+      // v3.2：起点西移 140 米、南移 50 米，先背身站 8 秒再走（R2 复评：参考里她站在暖亮的石板上；原位置正好落在门柱的长影里）
       // 在南天门内侧与广场西半边缓缓踱步，走到台沿停下来看一会儿云，再踱回来（main.js 的 stepLady）。另有几位常人大小的宫女站在小殿前
       if (P.lady.nv > 16) {
-        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 120, FY + 0.05, 25590, 0, LS), feature: 60, twoSided: true });
+        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 260, FY + 0.05, 25540, 0, LS), feature: 60, twoSided: true });
         W.batches.push(lb);
-        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 0, x: dx - 120, z: 25590, yaw: -1.5, yawT: -1.5, ph: 0, m: m4.create(),
-          path: [[dx - 120, 25590], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
+        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 8, x: dx - 260, z: 25540, yaw: -0.8, yawT: -0.8, ph: 0, m: m4.create(),
+          path: [[dx - 260, 25540, -0.8, 8], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
         add(P.lady, [T(dx - 262, FY + 0.05, 25668, 2.2, 1.68), T(dx + 262, FY + 0.05, 25672, -2.3, 1.65), T(dx + 268, FY + 0.05, 25690, -1.2, 1.7)], { name: 'D2.maids', feature: 2, maxDist: 1200, deform: 2, deformP: [0.007, 1.1, 0, 0], twoSided: true });
       }
       grpOf(n1, 'forest'); for (let i = c1; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
