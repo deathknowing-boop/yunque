@@ -7167,9 +7167,11 @@ function buildWorld(gl, onProgress = () => {}) {
         islandF(x, y, z, 600); putP(t === 9 ? p9L : t === 7 ? p7L : p5L, x, y, z, s, t === 9 ? 73.2 : t === 7 ? 60.4 : 47.6, yaw);
       }
       add(TK.tgPagodaGeo({ tiers: 9, lod: true }), p9L, { name: 'D2.pagoda9L', feature: 400, shadow: false });
-      // v2.9 阶顶两侧近处各一座楼阁，立在悬台上（参考 R4：门楼两侧有近景的重檐殿切进画框，门被夹在中间）。离中轴 700 米（阶宽不到 300），不碍登天阶的航线
-      for (const sx of [-1, 1]) { add(TK.tgPlatformGeo(300, 300, { H: 36, slab: 8 }), [T(dx + sx * 720, FY - 20, 24470, 0)], { name: 'D2.wingIsle', feature: 300, shadow: false }); obb([dx + sx * 720, FY - 38, 24470], [150, 18, 150]); obb([dx + sx * 720, FY - 20 + 47.6 * 7 / 2, 24470], [11.4 * 8, 47.6 * 7 / 2, 11.4 * 10]); }
-      add(TK.tgPagodaGeo({ tiers: 5, lod: true }), [TS(dx - 720, FY - 20, 24470, 0, 8, 7, 10), TS(dx + 720, FY - 20, 24470, 0, 8, 7, 10)], { name: 'D2.wingPav', feature: 300, shadow: false });      // 简模、不投影：全模两座让登天阶半途和俯瞰慢了一成多
+      // v3.0 南天门台子的南边两角各一座全模楼阁（参考 R4：门两侧近景的重檐楼阁切进画框，后面压着更高的阙楼——前低后高两层）。
+      //   v2.9 是浮在阶顶两侧悬台上的简模，R4 机位看不到、阶上看是两块浮板（复评说抢眼）
+      for (const sx of [-1, 1]) { obb([dx + sx * 600, FY + 1.2 * 8, 24950], [11.4 * 8, 1.2 * 8, 11.4 * 10]); obb([dx + sx * 600, FY + 47.6 * 7 / 2, 24950], [5.6 * 8, 47.6 * 7 / 2, 5.6 * 10]); }
+      add(pg5, [TS(dx - 600, FY, 24950, 0, 8, 7, 10), TS(dx + 600, FY, 24950, 0, 8, 7, 10)], { name: 'D2.wingPav', feature: 300 });
+      // v3.0 大殿背后一座宽的七层楼阁（七层塔沿 x 拉宽成楼），立在薄台上：从广场北望、从 R3 仰望，大殿屋脊后面又压出一层层错高的檐（参考 R3、R4）
       // 广场西厢再立一座长楼阁（五层塔沿 z 拉长成楼，面朝广场）；东厢这一段让开去镜台的口子
       // v2.8 广场北端两厢各一座重檐配殿（面朝广场），把大殿两侧的空当收住；R3 那排长立面的一端有了前伸的殿
       add(TK.tgHallGeo({ nx: 7, nz: 3 }), [T(dx - 720, FY, 27225, Math.PI / 2, 7), T(dx + 720, FY, 27225, -Math.PI / 2, 7)], { name: 'D2.sideHalls', feature: 300 });
