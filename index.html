@@ -5532,13 +5532,14 @@ const ARC = { cx: -6300, cz: 12300, R: 4300, a0: -0.68, a1: 0.68, yFoot: 1420, y
 const WALLHALL = { x: -1950, th: 220, z0: 31200, z1: 35200, yB: 300, yT: 3300, oz0: 32250, oz1: 34550, oy0: 2120, oy1: 2900, depth: 1050, ledge: 380, ledgeY: 960 };
 // v1.0 千柱林（参考帧“圆门千柱”）：登天阶前、两尊镇阶石像之前。素门在 z = gz，柱林 z0..z1，巷子沿 +z 直通登天阶的起步
 // cx 巷子中线；lane 巷半宽；x1 柱林外缘离中线的距离；柱顶 top 藏在素门的门头之下
-const FOREST = { cx: -3400, gz: 16900, z0: 17250, z1: 19020, lane: 300, x1: 1300, sp: 66, r: 8.5, y0: 300, top: 2560, gap: 40 };
+const FOREST = { cx: -3400, gz: 16900, z0: 17250, z1: 19020, lane: 300, x1: 1760, sp: 66, r: 10, y0: 300, top: 4250, gap: 40 };      // v4.0：洞口放大三倍，柱林跟着加高（2560 → 4250）、加宽（1300 → 1760）
 // 素门：一整块素白的石屏，正中开圆门，门框是三道往里退的白石环——和开场的天门（十二公里的长墙、朱漆门洞、匾、幡、墙头殿阁）完全不同，
 // 只在门头压一条窄窄的檐与栏杆当“精细带”。局部坐标：屏厚沿 Z，正面朝 -Z（来路），x 居中，y 绝对高度
-const SUMEN = { W: 2800, yB: 250, yT: 2840, TH: 150, yc: 1640, R: 560 };
+const SUMEN_WAIST = 620;      // v4.0：屏脚腰线压到门底以下（原来 900 会横穿放大后的门洞）
+const SUMEN = { W: 5000, yB: 250, yT: 4750, TH: 150, yc: 2420, R: 1660, S: 1880 };      // v4.0：圆门半径 560 → 1660（高三倍），门底 760 落在云面上；屏加宽加高
 function sumenGeo() {
   const g = new Geo(32768);
-  const { W, yB, yT, TH, yc, R } = SUMEN, S = 760, hz = TH / 2;
+  const { W, yB, yT, TH, yc, R, S } = SUMEN, hz = TH / 2;
   const WHITE = () => g.mat(MAT.MEGA, 1, 140, 1);
   WHITE();
   g.box(-(W / 2 + S) / 2, (yB + yT) / 2, 0, W / 2 - S, yT - yB, TH, { skip: '+x-y' });
@@ -5546,7 +5547,7 @@ function sumenGeo() {
   g.box(0, (yc + S + yT) / 2, 0, 2 * S, yT - yc - S, TH, { skip: '+x-x-y' });
   g.box(0, (yB + yc - S) / 2, 0, 2 * S, yc - S - yB, TH, { skip: '+x-x+y-y' });
   // 门框：正面三道退台的圆环（外大内小，一道比一道往里缩），背面一道
-  const steps = [[R + 84, 0], [R + 52, 34], [R + 22, 68], [R, 100]];      // [半径, 退进深度]（v1.2 复评后收薄：门框不要抢门里的画面）
+  const steps = [[R + 140, 0], [R + 88, 34], [R + 38, 68], [R, 100]];      // [半径, 退进深度]（v1.2 复评后收薄：门框不要抢门里的画面）
   const sq = (a) => { const c = Math.cos(a), s = Math.sin(a), k = S / Math.max(Math.abs(c), Math.abs(s)); return [c * k, s * k]; };
   const ring = (r0, r1, z, flip) => g.surf(128, 1, (u, v) => { const a = u * Math.PI * 2, r = lerp(r0, r1, v); return [Math.cos(a) * r, yc + Math.sin(a) * r, z]; }, { uv: (u, v, p) => [p[0], p[1]], flip });
   const tube = (r, z0, z1) => g.surf(128, 1, (u, v) => { const a = u * Math.PI * 2; return [Math.cos(a) * r, yc + Math.sin(a) * r, lerp(z0, z1, v)]; }, { uv: (u, v, p) => [u * 2 * Math.PI * r, p[1]], flip: true });
@@ -5569,7 +5570,7 @@ function sumenGeo() {
   addHipRoof(g, { W: W + 120, D: TH + 110, H: 34, y: yT + 12, up: 8, tile: 4.2, nu: 80, nv: 6, thick: 3, rafter: 3, ridgeH: 6 });
   g.pop();
   // 屏脚：一圈腰线
-  g.mat(MAT.STONE, 1, 12, 0); g.box(0, 900, 0, W + 30, 10, TH + 26, { aoB: 0.5 });
+  g.mat(MAT.STONE, 1, 12, 0); g.box(0, SUMEN_WAIST, 0, W + 30, 10, TH + 26, { aoB: 0.5 });
   return g;
 }
 
@@ -6049,7 +6050,7 @@ function bannerGeo(w = 14, l = 120, red = true) {
 }
 
 
-return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, reindeerGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
+return { vnoise, fbm, sweepBar, addHipRoof, hallGeo, megaHallGeo, pilgrimGeo, towerGeo, pavilionGeo, megaPillarGeo, galleryRingGeo, megaColumnGeo, slimColumnGeo, ringGateGeo, MIRROR, ARC, WALLHALL, FOREST, SUMEN_WAIST, SUMEN, sumenGeo, GATEWALL, megaGateWallGeo, STEP_H, stairRunGeo, paifangGeo, balustradeGeo, lanternGeo, skyLanternGeo, peakGeo, karstGeo, wallFallGeo, terraceIslandGeo, fieldIslandGeo, sunflowerGeo, roseBushGeo, rapeClumpGeo, vineCurtainGeo, reindeerGeo, islandGeo, pineGeo, bambooGeo, waterfallGeo, bannerGeo, MAT };
 })();
 
 // ---- world/tiangong.js ----
@@ -6640,7 +6641,7 @@ const TK = __m['world/tiangong.js'];
 const GK = __m['world/garden.js'];
 const { meshGeo } = __m['render/assets.js'];
 const MAT = K.MAT;
-const inForest = (x, z, m = 0) => (Math.abs(x - K.FOREST.cx) < K.FOREST.x1 + 160 + m && z > K.FOREST.gz - 260 - m && z < K.FOREST.z1 + 160 + m)
+const inForest = (x, z, m = 0) => (Math.abs(x - K.FOREST.cx) < 1300 + 160 + m && z > K.FOREST.gz - 260 - m && z < K.FOREST.z1 + 160 + m)
   || (Math.abs(x - K.MIRROR.cx) < K.MIRROR.w / 2 + 1600 + m && z > K.MIRROR.z0 - 1200 - m && z < K.MIRROR.z1 + 300 + m)
   || (Math.abs(Math.hypot(x - K.ARC.cx, z - K.ARC.cz) - K.ARC.R) < 700 + m && Math.atan2(z - K.ARC.cz, x - K.ARC.cx) > K.ARC.a0 - 0.12 && Math.atan2(z - K.ARC.cz, x - K.ARC.cx) < K.ARC.a1 + 0.12)
   || (x > K.WALLHALL.x - K.WALLHALL.depth - 300 - m && x < K.WALLHALL.x + 3300 + m && z > K.WALLHALL.z0 - 300 - m && z < K.WALLHALL.z1 + 300 + m)
@@ -6696,7 +6697,7 @@ function buildWorld(gl, onProgress = () => {}) {
     ringA: K.galleryRingGeo(260, 170), ringB: K.galleryRingGeo(200, 200), ringS: K.galleryRingGeo(490, 115),
     column: K.megaColumnGeo(420, 16),
     gate: K.ringGateGeo(800, 150, 210),
-    stair: K.stairRunGeo(160, 240, 420), paifang: K.paifangGeo(380, 150), pilgrim: K.pilgrimGeo(),
+    stair: K.stairRunGeo(160, 240, 420), stair2: K.stairRunGeo(2540 / 15, 254, 600), paifang: K.paifangGeo(380, 150), pilgrim: K.pilgrimGeo(),
     guardian: meshGeo('guardian', { mat: [MAT.STONE, 10, 3] }),
     // v2.3 汉服女子（照参考视频 1；模型高度归一成 1，放的时候乘身高）。参数 B 是布料的自由度：裙摆越往下越飘、垂下来的大袖也飘，头和上身不动
     lady: meshGeo('lady', { mat: [MAT.HERO, 7, 0], aoGain: 0.6, w: (x, y, z) => { const sk = Math.max(0, 1 - y / 0.46), sl = Math.max(0, Math.min(1, (Math.abs(x) - 0.13) / 0.14)) * (y > 0.3 && y < 0.8 ? 1 : 0); return Math.min(1, sk * sk * 0.9 + sl * 0.7); } }),
@@ -6831,18 +6832,20 @@ function buildWorld(gl, onProgress = () => {}) {
     // v2.2 素门两翼：原来这块石屏只有 2.8 公里宽，孤零零立在云上像一只盒子。现在向西接 7.6 公里、向东接 6.2 公里，成了一道横贯天际的素墙——
     // 和开场的天门、终点的月门长墙是同一种句法（一道占满地平线的墙 + 正中一个圆门），全程因此分成“三重门”。
     // 墙把后面的登天阶挡在下面，只让天宫的屋顶和昼月从墙头露出来（主题乐园里“越过围墙看见城堡尖”的做法）
-    const SWW = 7600, SWE = 6200;
-    { const wg = new Geo(), yB = SM.yB, yT = SM.yT, cy = (yB + yT) / 2, x0 = F.cx - SM.W / 2, x1 = F.cx + SM.W / 2;
+    const SWW = 6500, SWE = 5100;      // v4.0：屏加宽 2200 米，两翼各收 1100，外端不动
+    { const wg = new Geo(), yB = SM.yB, yT = 2840, cy = (yB + yT) / 2,      // v4.0：两翼保持原高（2840），只有正中的门屏加高到 4750——城门楼一样高出长墙；开场镜头穿过天门望过去，两翼的墙头线不变
+        x0 = F.cx - SM.W / 2, x1 = F.cx + SM.W / 2;
       wg.mat(MAT.MEGA, 1, 140, 1);
       wg.box(x0 - SWW / 2, cy, 0, SWW, yT - yB, SM.TH, { skip: '+x-y' }); wg.box(x1 + SWE / 2, cy, 0, SWE, yT - yB, SM.TH, { skip: '-x-y' });
       // 扶壁：每 760 米一道，朝来路凸出 70 米。长墙有了节奏，斜着看才读得出透视和长度
       for (let x = x0 - 380; x > x0 - SWW + 100; x -= 760) wg.box(x, cy - 120, -SM.TH / 2 - 35, 96, yT - yB - 240, 70, { skip: '-y' });
       for (let x = x1 + 380; x < x1 + SWE - 100; x += 760) wg.box(x, cy - 120, -SM.TH / 2 - 35, 96, yT - yB - 240, 70, { skip: '-y' });
       wg.mat(MAT.STONE, 1, 12, 0);
-      for (const [xc, L] of [[x0 - SWW / 2, SWW], [x1 + SWE / 2, SWE]]) { wg.box(xc, yT + 6, 0, L, 12, SM.TH + 50, { aoB: 0.5 }); wg.box(xc, 900, 0, L, 10, SM.TH + 26, { aoB: 0.5 });
+      for (const [xc, L] of [[x0 - SWW / 2, SWW], [x1 + SWE / 2, SWE]]) { wg.box(xc, yT + 6, 0, L, 12, SM.TH + 50, { aoB: 0.5 }); wg.box(xc, K.SUMEN_WAIST, 0, L, 10, SM.TH + 26, { aoB: 0.5 });
         wg.push(m4.translate(m4.create(), xc, 0, 0)); K.addHipRoof(wg, { W: L, D: SM.TH + 110, H: 34, y: yT + 12, up: 0, tile: 4.2, nu: 60, nv: 4, thick: 3, rafter: 3, ridgeH: 6 }); wg.pop(); }
       add(wg, [T(0, 0, F.gz, 0)], { name: 'S.wings', feature: 1500 }); }
-    col({ t: 'gatewall', z: F.gz, th: SM.TH / 2 + 10, x0: F.cx - SM.W / 2 - SWW, x1: F.cx + SM.W / 2 + SWE, y1: SM.yT + 40, c: [F.cx, SM.yc], R: SM.R, grp: 'forest' });
+    col({ t: 'gatewall', z: F.gz, th: SM.TH / 2 + 10, x0: F.cx - SM.W / 2, x1: F.cx + SM.W / 2, y1: SM.yT + 40, c: [F.cx, SM.yc], R: SM.R, grp: 'forest' });
+    for (const [xa, xb] of [[F.cx - SM.W / 2 - SWW, F.cx - SM.W / 2], [F.cx + SM.W / 2, F.cx + SM.W / 2 + SWE]]) { obb([(xa + xb) / 2, (SM.yB + 2880) / 2, F.gz], [(xb - xa) / 2, (2880 - SM.yB) / 2, SM.TH / 2 + 10]); W.colliders[W.colliders.length - 1].grp = 'forest'; }
     // 柱林
     const nx = Math.floor((F.x1 - F.lane) / F.sp) + 1, nz = Math.floor((F.z1 - F.z0) / F.sp) + 1;
     for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) for (const sx of [-1, 1]) {
@@ -6892,7 +6895,8 @@ function buildWorld(gl, onProgress = () => {}) {
       add(rg, null, { name: 'S.roof', feature: 300 }); }
     col({ t: 'forest', F, r: F.r * 1.2, y1: F.top * 1.04 + 60, grp: 'forest' });
     // 石路：门前三百米起，穿过圆门，一路缓降到登天阶的第一级（780 米）；两道细槽像轨，每 120 米一对灯，桥墩扎进云里
-    const za = F.gz - 420, zb = 19600, ya = 1012, yb = 781, L = Math.hypot(zb - za, ya - yb), pitch = Math.atan2(ya - yb, zb - za), g = new Geo(), lan = [];
+    const za = F.gz - 420, zb = 19450, ya = 830, yb = 801,      // v4.0：路贴着云面进洞，接到阶脚的广场
+       L = Math.hypot(zb - za, ya - yb), pitch = Math.atan2(ya - yb, zb - za), g = new Geo(), lan = [];
     g.push(m4.mul(m4.create(), m4.translate(m4.create(), 0, ya, za), m4.rotX(m4.create(), pitch)));
     g.mat(MAT.PAVING, 1, 0.5, 0); g.box(0, -1.2, L / 2, 15, 2.4, L, { aoB: 0.5 });
     g.mat(MAT.STONE, 1, 1, 0); for (const sx of [-1, 1]) { g.box(sx * 7.8, 0.5, L / 2, 0.7, 1.5, L); g.box(sx * 2.6, 0.04, L / 2, 0.5, 0.1, L); }
@@ -7043,7 +7047,7 @@ function buildWorld(gl, onProgress = () => {}) {
   // =====================================================================
   {
     const dx = -3400, z0 = 19600, runs = 16, rise = 160, run = 240, land = 90;
-    const st = [], lands = [], piers = [];
+    const st = [], lands = [], piers = [], cD0 = W.colliders.length;
     let y = 780, z = z0;
     for (let i = 0; i < runs; i++) {
       st.push(T(dx, y, z, 0));
@@ -7084,6 +7088,8 @@ function buildWorld(gl, onProgress = () => {}) {
       for (let n = 0; n < 90; n++) person(dx + (pr() - 0.5) * 230, ty0 + 1.3, tz0 - 235 - pr() * 70, 0, 1);
       const pb = makeBatch(gl, P.pilgrim, { raw: new Float32Array(raw), bounds: { center: [dx, 2100, z0 + 2900], radius: 3600 }, name: 'D.pilgrims', deform: 6, feature: 2, maxDist: 1800, shadow: false });
       W.batches.push(pb); }
+    // v4.0：旧阶（16 段小平台）、旧石像、旧朝圣者只留给标题画面；启程之后换成 D2 段里的三段式新阶
+    for (let i = cD0; i < W.colliders.length; i++) if (!W.colliders[i].grp) W.colliders[i].grp = 'preF';
     // 天宫：台基 + 重檐巨殿 + 双阙
     const ty = y, tz = z + 520;
     const tp = new Geo();
@@ -7105,7 +7111,7 @@ function buildWorld(gl, onProgress = () => {}) {
     const ln = []; for (let i = -6; i <= 6; i++) { if (i === 0) continue; ln.push(T(dx + i * 105, ty + 2, tz - 530, 0, 16)); }
     add(P.lantern, ln, { name: 'D.lanterns', feature: 20, maxDist: 16000 });
     // 旧的天宫（上面这几样）只留给标题画面——标题构图不动；点“启程”之后换成下面这一片
-    for (const b of W.batches) if (['D.podium', 'D.palace', 'D.que', 'D.sideHalls', 'D.lanterns', 'D.paifang', 'D.stairTowers'].includes(b.name)) b.grp = 'preF';
+    for (const b of W.batches) if (['D.podium', 'D.palace', 'D.que', 'D.sideHalls', 'D.lanterns', 'D.paifang', 'D.stairTowers', 'D.stairs', 'D.landings', 'D.piers', 'D.guardians', 'D.guardianPeds', 'D.pilgrims'].includes(b.name)) b.grp = 'preF';
     // =====================================================================
     // v2.2 天宫（照参考视频 1 重做，建筑套件见 tiangong.js）。全程的中点、也是白天这一幕的高潮：
     //   登天阶尽头先是一座“南天门”——八根立在鎏金莲座上的朱红巨柱（柱径五十多米、莲座八十多米高）托着重檐门楼，人从柱间穿过去；
@@ -7227,20 +7233,65 @@ function buildWorld(gl, onProgress = () => {}) {
         ] };
       W.cloudBank.base = FY - 520;
       W.cloudBank.hx -= 200; W.cloudBank.hz -= 200;      // v2.7：压云顶的盒子往里收 200 米——台沿外不远云就能高过台面（参考 R1、R2：柱廊旁边就是一堵云），沿边略漫上台沿
-      // 登天阶上的牌楼与阙楼也换成同一套：牌楼 → 小一号的门阙（第 2、6、10 个平台；最上面那个平台不再立，南天门就在眼前），阙楼 → 五层楼阁
-      { const gi = [], ti = [];
-        lands.forEach((m, i) => {
-          if (i % 4 === 1 && i < 12) { gi.push(T(dx, m[13], m[14], 0, 8)); for (const gx of TK.TG_GATE.xs) for (const gq of TK.TG_GATE.zs) col({ t: 'cyl', c: [dx + gx * 8, m[14] + gq * 8], r: 11, y0: m[13] - 10, y1: m[13] + 112 }); obb([dx, m[13] + 204, m[14]], [191, 92, 94]); }
-          if (i % 3 === 2 && i % 4 !== 1 && i < runs - 1) for (const sx of [-1, 1]) ti.push(T(dx + sx * 172, m[13], m[14], 0, 2.3));
-        });
-        add(TK.tgGateGeo({ lod: true }), gi, { name: 'D2.stairGates', feature: 150 }); add(pg5, ti, { name: 'D2.stairTowers', feature: 60, maxDist: 16000 }); }      // v2.8：阶上的三座小门用简模（全模的金叶柱太费）
+      // v4.0 登天阶竖向重排（用户 11-19：出千柱林时已在阶腰、注意不到石像，阶不够宏伟）：
+      //   出林子是贴着云面（约 860 米）的；前方先是一块阶脚广场，两尊镇阶巨像立在广场两侧（从林口看在视线两边约 25°），
+      //   阶加宽到 600 米、改成三段，每段之间一块大平台，每段起步立一座门阙；两侧的楼阁一段比一段高。阶顶不动（台面 FY、z 24860）
+      { const SW = 600, RS = 2540 / 15, RN = 254, PD = 300, Y0 = FY - 2540, zEnd = 24860, zS = zEnd - 15 * RN - 2 * PD, foot = { z0: 19450, z1: zS, w: 1240 };
+        const st2 = [], piers2 = [], mids = [], gates = [];
+        add(TK.tgPlatformGeo(foot.w, foot.z1 - foot.z0, { H: 170, slab: 96, plaza: true }), [T(dx, Y0, (foot.z0 + foot.z1) / 2, 0)], { name: 'D2.foot', feature: 800 });
+        obb([dx, Y0 - 85, (foot.z0 + foot.z1) / 2], [foot.w / 2, 85, (foot.z1 - foot.z0) / 2]);
+        gates.push([zS - 80, Y0, 12]);
+        let y = Y0, z = zS;
+        for (let f = 0; f < 3; f++) {
+          for (let k = 0; k < 5; k++) {
+            st2.push(T(dx, y, z, 0));
+            obb([dx, y + RS / 2 - 12, z + RN / 2], [SW / 2 + 10, 22, Math.hypot(RS, RN) / 2], 0, Math.atan2(RS, RN));
+            y += RS; z += RN;
+            if (k < 4 || f === 2) { piers2.push(TS(dx, 0, z, 0, 1.7, (y - 44) / 3000, 1)); obb([dx, (y - 40) / 2, z], [255, (y - 40) / 2, 40]); }
+          }
+          if (f < 2) { mids.push([y, z + PD / 2]); gates.push([z + PD / 2, y, 11]); z += PD; }
+        }
+        for (const [my, mz] of mids) {
+          add(TK.tgPlatformGeo(1000, PD, { H: 120, slab: 60, plaza: true }), [T(dx, my, mz, 0)], { name: 'D2.stairPlat', feature: 600 });
+          add(TK.tgMassifGeo(960, PD - 30, my - 120 - 500, 0.05), [T(dx, my - 118, mz, 0)], { name: 'D2.stairMassif', feature: 900 });
+          obb([dx, (my + 500) / 2, mz], [500, (my - 500) / 2, PD / 2]);
+        }
+        add(P.stair2, st2, { name: 'D2.stairs', feature: 300, deform: 5, deformP: [K.STEP_H, 0.22, 0.45, 0] });
+        add(P.stairPier, piers2, { name: 'D2.piers', feature: 200 });
+        // 门阙：阶脚一座大的（12 倍），两块平台上各一座（11 倍）
+        { const byS = {};
+          for (const [gz2, gy, gs] of gates) { (byS[gs] = byS[gs] || []).push(T(dx, gy, gz2, 0, gs)); for (const gx of TK.TG_GATE.xs) for (const gq of TK.TG_GATE.zs) col({ t: 'cyl', c: [dx + gx * gs, gz2 + gq * gs], r: 1.4 * gs, y0: gy - 10, y1: gy + 14 * gs }); obb([dx, gy + 25.5 * gs, gz2], [23.9 * gs, 11.5 * gs, 11.8 * gs]); }
+          for (const k in byS) add(k === '12' ? gateG : TK.tgGateGeo({ lod: true }), byS[k], { name: 'D2.stairGates' + k, feature: 150 }); }      // 阶脚那座近看，用全模（和南天门同一份几何）
+        // 镇阶巨像：阶脚广场两侧（高 640，脚下一块到云里的白石座）；第一块平台两侧再一对小些的（420）
+        if (P.guardian.nv) {
+          const gs = [], ped = [];
+          const put = (x, yb, zz, h, yaw, py0) => { gs.push(T(x, yb, zz, yaw, h)); ped.push(TS(x, py0, zz, 0, h * 0.62, yb - py0, h * 0.62)); obb([x, yb + h * 0.5, zz], [h * 0.24, h * 0.5, h * 0.27]); obb([x, (yb + py0) / 2, zz], [h * 0.31, (yb - py0) / 2, h * 0.31]); };
+          for (const sx of [-1, 1]) put(dx + sx * 540, Y0 + 30, 20020, 600, Math.PI - sx * 0.22, 300);      // 林口看过去在两侧约 26°、头顶仰角约 25°（跟随镜头整尊入画）
+          for (const sx of [-1, 1]) put(dx + sx * 420, mids[0][0] + 20, mids[0][1], 420, Math.PI - sx * 0.3, mids[0][0] - 400);
+          add(P.guardian, gs, { name: 'D2.guardians', feature: 400 });
+          const pg = new Geo(); pg.mat(MAT.STONE, 0.9, 16, 0); pg.box(0, 0.5, 0, 1, 1, 1, { skip: '-y', aoB: 0.5 });
+          add(pg, ped, { name: 'D2.guardianPeds', feature: 300 });
+        }
+        // 两侧楼阁：第二块平台两端各一座七层（一段比一段高；阶顶两侧已有那两座更高的翼楼）
+        { const tw = []; for (const sx of [-1, 1]) { const x = dx + sx * 410, yy = mids[1][0], zz = mids[1][1], s = 4.6; tw.push(TS(x, yy, zz, 0, s * KW, s, s * KW)); obb([x, yy + 1.2 * s, zz], [11.4 * s * KW, 1.2 * s, 11.4 * s * KW]); obb([x, yy + (2.4 + 60.4) / 2 * s, zz], [5.6 * s * KW, (60.4 - 2.4) / 2 * s, 5.6 * s * KW]); }
+          add(pg7, tw, { name: 'D2.stairTowers', feature: 60, maxDist: 16000 }); }
+        // 朝圣者：每段阶道一百多人；阶顶广场御路两侧两列、门前一群（和旧阶那一批一样）
+        { const raw = [], pr = mulberry32(4412);
+          const person = (x, yy, zz, sp, len) => raw.push(x, yy, zz, 0.95 + pr() * 0.2, sp, pr(), len, RS / RN, pr(), K.STEP_H, 0, 0, 1, pr(), 0, 0);
+          st2.forEach((m) => { for (let n = 0; n < 120; n++) { const sx = pr() > 0.5 ? 1 : -1; person(dx + sx * (36 + pr() * pr() * 250), m[13], m[14], 0.55 + pr() * 0.4, RN); } });
+          for (let n = 0; n < 44; n++) for (const sx of [-1, 1]) person(dx + sx * (58 + (n % 2) * 3), FY + 1.3, zEnd + 20 - 500 + 520 + n * 6.2, 0, 1);
+          for (let n = 0; n < 90; n++) person(dx + (pr() - 0.5) * 230, FY + 1.3, zEnd + 20 + 520 - 235 - pr() * 70, 0, 1);
+          const pb = makeBatch(gl, P.pilgrim, { raw: new Float32Array(raw), bounds: { center: [dx, 2100, 22500], radius: 3800 }, name: 'D2.pilgrims', deform: 6, feature: 2, maxDist: 1800, shadow: false });
+          W.batches.push(pb); }
+        W.stair2 = { Y0, zS, zEnd, mids, foot };
+      }
       add(pg7, p7, { name: 'D2.pagoda7', feature: 400 }); add(pg5, p5, { name: 'D2.pagoda5', feature: 300 }); add(pg9, p9, { name: 'D2.pagoda9', feature: 600, shadow: false }); add(pg7, p7I, { name: 'D2.pagoda7I', feature: 400, shadow: false });      // v2.9：悬台上的塔不投影（影子只落在自己的台上；俯瞰省一成）
       for (const [x, y, z, w] of plats) { add(TK.tgPlatformGeo(w, w, { H: 130, slab: 8 }), [T(x, y, z, 0)], { name: 'D2.isle', feature: 500 }); }
       // 台沿的朱栏（放大八倍；让开登天阶上来的那一段）
       { const bi = [], BS = 8, seg = 48, KH = 9, KW = 22;      // v2.5：KH / KW = 台沿两步台阶的总高、每步宽（米）
         const edge = (x0, z0, x1, z1) => { const L = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(L / seg)), yaw = Math.abs(x1 - x0) > 1 ? 0 : Math.PI / 2; for (let i = 0; i < n; i++) { const t = (i + 0.5) / n; bi.push(TS(lerp(x0, x1, t), FY + KH, lerp(z0, z1, t), yaw, L / n / 6, BS, BS)); } };
         const a = T1.w / 2 - 4, b = T2.w / 2 - 4, zs = T1.z - T1.d / 2 + 4, zm = T1.z + T1.d / 2, zn = T2.z + T2.d / 2 - 4;
-        edge(dx - a, zs, dx - 250, zs); edge(dx + 250, zs, dx + a, zs);
+        edge(dx - a, zs, dx - 330, zs); edge(dx + 330, zs, dx + a, zs);      // v4.0：阶宽 600，口子跟着放宽
         for (const sx of [-1, 1]) { edge(dx + sx * a, zs, dx + sx * a, zm); edge(dx + sx * a, zm + 4, dx + sx * b, zm + 4); edge(dx + sx * b, zm + 4, dx + sx * b, zn); }
         edge(dx - b, zn, dx + b, zn);
         add(TK.tgBalustradeGeo(6), bi, { name: 'D2.rails', feature: 10, maxDist: 9000, shadow: false });
@@ -7255,7 +7306,7 @@ function buildWorld(gl, onProgress = () => {}) {
             obb([cx, oy + h / 2, cz], [ax ? L / 2 + KW : KW / 2, h / 2, ax ? KW / 2 : L / 2 + KW]);
           }
         };
-        kerb(dx - a, zs, dx - 250, zs, 0, 1); kerb(dx + 250, zs, dx + a, zs, 0, 1);
+        kerb(dx - a, zs, dx - 330, zs, 0, 1); kerb(dx + 330, zs, dx + a, zs, 0, 1);
         for (const sx of [-1, 1]) { kerb(dx + sx * a, zs, dx + sx * a, zm, -sx, 0); kerb(dx + sx * a, zm + 4, dx + sx * b, zm + 4, 0, 1); kerb(dx + sx * b, zm + 4, dx + sx * b, zn, -sx, 0); }
         kerb(dx - b, zn, dx + b, zn, 0, -1);
         add(kg, [T(dx, oy, oz, 0)], { name: 'D2.kerb', feature: 40 }); }
@@ -7286,7 +7337,7 @@ function buildWorld(gl, onProgress = () => {}) {
       W.tiangong = { c: [dx, FY, 26300], gate: [dx, FY, gz], T1, T2 };
     }
     beacon('D', [dx, ty + 70, 25900], 16.2);
-    W.beacons[W.beacons.length - 1].via = [[dx, ty + 250, 24900], [dx, ty + 200, 25640]];      // 自动巡航：先到阶顶上空，再从南天门正中穿过去
+    W.beacons[W.beacons.length - 1].via = [[dx, 1000, 19700], [dx, 1700, 20330], ...W.stair2.mids.map(([my, mz]) => [dx, my + 560, mz]), [dx, ty + 250, 24900], [dx, ty + 200, 25640]];      // v4.0：出林子贴云飞到阶脚、越过阶脚门阙，再沿三段阶往上      // 自动巡航：先到阶顶上空，再从南天门正中穿过去
     W.sites[3].pos = [dx, ty + 200, 25500];
   }
   onProgress(0.68);
@@ -7825,7 +7876,7 @@ function buildWorld(gl, onProgress = () => {}) {
     const pts = [[0, 1560, 80], [-200, 1900, 3000], ...W.beacons.map(b => b.pos)];
     // 万廊一段特意从两座巨廊之间的“峡谷”里穿过去
     // v2.2 天宫一段：阶顶 → 穿南天门 → 广场 → 从东厢两座楼阁之间出去 → 镜台
-    const route = [pts[0], pts[1], W.beacons[1].pos, [1500, 1950, 11300], [2600, 1330, 12650], [2600, 1270, 14700], W.beacons[2].pos, [-1300, 1650, 15900], [-3400, 1520, 16300], [-3400, 1250, 18600], [-3400, 3470, 24860], W.beacons[3].pos, [-2440, 3480, 26500],      // v1.0：从万廊斜插到素门前，穿圆门、走千柱林的巷子上登天阶
+    const route = [pts[0], pts[1], W.beacons[1].pos, [1500, 1950, 11300], [2600, 1330, 12650], [2600, 1270, 14700], W.beacons[2].pos, [-1300, 1650, 15900], [-3400, 980, 16300], [-3400, 880, 18600], [-3400, 920, 19900], [-3400, 3470, 24860], W.beacons[3].pos, [-2440, 3480, 26500],      // v1.0：从万廊斜插到素门前，穿圆门、走千柱林的巷子上登天阶
       [-700, 2560, 26850], [-700, 2500, 27700], [1500, 2480, 27960], W.beacons[4].pos, [-300, 2300, 33600], W.beacons[5].pos, [-2700, 2300, 42800], W.beacons[6].pos];
     for (let i = 0; i < route.length - 1; i++) {
       const a = route[i], b = route[i + 1], d = v3.dist(a, b), n = Math.max(2, Math.floor(d / 170));
@@ -9225,7 +9276,7 @@ function autoPilot(P, dt) {
   if (P._viaFor !== b.id) { P._viaFor = b.id; P._via = 0; }
   let via = !toGate && b.via && P._via < b.via.length ? b.via[P._via] : null;
   if (via && v3.dist(via, P.pos) < 320) { P._via++; via = P._via < b.via.length ? b.via[P._via] : null; }
-  const t = via ? via : !toGate ? b.flame : front ? [F.cx, 1350, F.z1 + 300] : [F.cx, 1520, F.gz - 1100], d = v3.sub(t, P.pos), dist = v3.len(d), hd = Math.hypot(d[0], d[2]);
+  const t = via ? via : !toGate ? b.flame : front ? [F.cx, 870, F.z1 + 300] : [F.cx, 960, F.gz - 1100], d = v3.sub(t, P.pos), dist = v3.len(d), hd = Math.hypot(d[0], d[2]);
   const wantY = toGate || via ? t[1] : hd > 1400 ? Math.max(t[1] + 150, 2050) : t[1];
   let yawE = Math.atan2(d[0], d[2]) - P.yaw; yawE = Math.atan2(Math.sin(yawE), Math.cos(yawE));
   const pitchT = clamp(Math.atan2(wantY - P.pos[1], Math.max(hd, 1)), -0.7, 0.7);
