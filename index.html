@@ -2787,8 +2787,8 @@ void main() {
       }
     } else if (k == 1) {
       float g = fbm3(P * 1.1);
-      albedo = mix(vec3(0.040, 0.020, 0.014), vec3(0.078, 0.038, 0.025), g);      // v2.6：瓦改暗红褐（参考 R7），少映天
-      rough = 0.70 + 0.18 * g;      // v2.4：0.46 → 0.62，少映一点天（屋面在画面里偏灰蓝，参考是褐黑的）
+      albedo = mix(vec3(0.046, 0.021, 0.013), vec3(0.084, 0.038, 0.022), g);      // v2.6：瓦改暗红褐（参考 R7），少映天
+      rough = 0.84 + 0.12 * g;      // v2.8：0.70 → 0.84，屋面映天映得发青灰（复评：参考是暗红褐）      // v2.4：0.46 → 0.62，少映一点天（屋面在画面里偏灰蓝，参考是褐黑的）
       if (vMat.z < 0.5) {
         // uv.x 以瓦垄为单位，uv.y 自檐口向上
         float fadeF = 1.0 - smoothstep(0.2, 0.65, fwU), fadeS = 1.0 - smoothstep(0.2, 0.65, fwU * 8.0);
@@ -2879,7 +2879,7 @@ void main() {
       float g = fbm3(P * 0.7), st = fbm3(P * 0.012 + 3.0), fine = fbm3(P * 3.1);
       albedo = mix(vec3(0.70, 0.56, 0.37), vec3(0.80, 0.67, 0.46), g * 0.7 + 0.15);
       albedo = mix(albedo, albedo * vec3(0.82, 0.79, 0.74), smoothstep(0.45, 0.8, st) * 0.4);
-      albedo *= (0.92 + 0.16 * h) * mix(vec3(1.025, 1.0, 0.955), vec3(0.975, 0.995, 1.035), hc);
+      albedo *= (0.88 + 0.24 * h) * mix(vec3(1.04, 1.0, 0.94), vec3(0.965, 0.99, 1.04), hc);      // v2.8：逐板色差再拉开（复评：亮处暗处都要能分出相邻的石板）
       albedo *= 0.96 + 0.08 * fine * (1.0 - smoothstep(0.02, 0.15, fw));
       albedo *= (1.0 - 0.30 * seam) * (1.0 + 0.09 * bev);
       rough = 0.56 + 0.2 * g; bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 + bev * 0.3; bumpK = 0.03;
@@ -3659,7 +3659,7 @@ void main() {
     // 鲲的珠光边缘
     if (flag > 3.5) direct += keyCol * sh * pow(1.0 - ndv, 3.0) * 0.12 * vec3(0.8, 0.9, 1.0);
     // 环境光：天空立方 + 天空镜面反射
-    vec3 amb = ambientCube(N) * dc * ao * (0.55 + 0.45 * ao) * (1.0 - uBigMoonP.y);      // uBigMoonP.y：漫反射环境光削减（v2.6 天宫午后压暗部，其余时候 0）
+    vec3 amb = ambientCube(N) * dc * ao * (0.55 + 0.45 * ao) * (1.0 - uBigMoonP.y) * mix(vec3(1.0), vec3(1.30, 1.02, 0.74), uBigMoonP.z);      // uBigMoonP.y：漫反射环境光削减（v2.6 天宫午后压暗部）；.z：暗部的暖色反弹（v2.8，暖石面把光反进阴影）。其余时候都是 0
     vec3 R = reflect(rd, N);
     vec3 env = mix(skyColor(R), ambientCube(R), saturate(rough * 1.5));
     vec3 Fr = F0 + (max(vec3(1.0 - rough), F0) - F0) * pow(1.0 - ndv, 5.0);
@@ -4326,7 +4326,7 @@ class Renderer {
     T.begin('lighting');
     this.lit.bind();
     const bm = env.bigMoonDir || [0, 0, 1], bmK = P.bigMoon * (env.bigMoonK || 0);
-    this.pLight.use().set(F).set({ uSkyP: [P.sunDisc, P.moonDisc, P.stars * (env.starVis === undefined ? 1 : env.starVis), P.moonRadius], uBigMoon: [bm[0], bm[1], bm[2], bmK > 0 ? P.bigMoonR : 0], uBigMoonP: [bmK, P.ambCut || 0, 0, 0], uUseAO: P.useAO, uUseVol: P.useVol });
+    this.pLight.use().set(F).set({ uSkyP: [P.sunDisc, P.moonDisc, P.stars * (env.starVis === undefined ? 1 : env.starVis), P.moonRadius], uBigMoon: [bm[0], bm[1], bm[2], bmK > 0 ? P.bigMoonR : 0], uBigMoonP: [bmK, P.ambCut || 0, P.ambWarm || 0, 0], uUseAO: P.useAO, uUseVol: P.useVol });
     drawFS(gl);
     T.end();
 
@@ -6119,9 +6119,12 @@ function tgRoof(g, o) {
     g.mat(TG, 0.9, 1, 1); sweepBar(g, pts, rw, rh * 0.8);
     g.mat(TG, 1, 0, 14); sweepBar(g, pts.map(p => [p[0], p[1] + rh * 0.8, p[2]]), rw * 0.42, rh * 0.3);
     if (!lod) {
-      const e = pts[pts.length - 1], d = v3.norm([sx, 0, sz]), tip = [];
-      for (let k = 0; k <= 3; k++) { const t = k / 3; tip.push([e[0] + d[0] * rh * 2.6 * t, e[1] + rh * (0.5 + 2.6 * t * t), e[2] + d[2] * rh * 2.6 * t]); }
-      sweepBar(g, tip, rw * 0.5, rh * 0.55);
+      // v2.8 翼角的金色卷草（参考 R7：每条戗脊端头一枚往回卷的金卷，脊中段再一枚小的）。v2.7 以前是一支直挑的金翘
+      const curl = (o, d, R, turns, w) => { const c = []; for (let k = 0; k <= 10; k++) { const t = k / 10, th = t * turns * Math.PI * 2, rr = R * (1 - 0.62 * t); c.push([o[0] + d[0] * rr * Math.sin(th), o[1] + R - rr * Math.cos(th), o[2] + d[2] * rr * Math.sin(th)]); } sweepBar(g, c, w, w * 1.1); };
+      const e = pts[pts.length - 1], d = v3.norm([sx, 0, sz]);
+      curl([e[0], e[1] + rh * 0.5, e[2]], d, rh * 1.5, 0.85, rw * 0.42);
+      const m = pts[Math.floor(pts.length / 2)];
+      curl([m[0], m[1] + rh * 0.9, m[2]], d, rh * 0.7, 0.8, rw * 0.3);
     }
   }
   if (o.top === false) return;
@@ -6177,8 +6180,8 @@ function flames(g, cx, yb, cz, o) {
     };
     const uv = (u, v) => [u, v];
     g.mat(TG, 0.95, jade ? 1 : 0, 13);
-    g.surf(6, 10, fn, { uv, flip: !down, ao: (u, v) => 0.62 + 0.38 * v });
-    g.surf(6, 10, fn, { uv, flip: down, ao: () => 0.45 });
+    g.surf(5, 8, fn, { uv, flip: !down, ao: (u, v) => 0.62 + 0.38 * v });
+    if (o.back) g.surf(5, 8, fn, { uv, flip: down, ao: () => 0.45 });      // v2.8：叶背贴着柱身，几乎看不见——默认不做（帧时间：每根柱五十片叶，双面时门一座就多三十多万个三角形）
   }
 }
 
@@ -7164,6 +7167,9 @@ function buildWorld(gl, onProgress = () => {}) {
       }
       add(TK.tgPagodaGeo({ tiers: 9, lod: true }), p9L, { name: 'D2.pagoda9L', feature: 400, shadow: false });
       // 广场西厢再立一座长楼阁（五层塔沿 z 拉长成楼，面朝广场）；东厢这一段让开去镜台的口子
+      // v2.8 广场北端两厢各一座重檐配殿（面朝广场），把大殿两侧的空当收住；R3 那排长立面的一端有了前伸的殿
+      add(TK.tgHallGeo({ nx: 7, nz: 3 }), [T(dx - 720, FY, 27225, Math.PI / 2, 7), T(dx + 720, FY, 27225, -Math.PI / 2, 7)], { name: 'D2.sideHalls', feature: 300 });
+      for (const sx of [-1, 1]) obb([dx + sx * 720, FY + 110, 27225], [62, 110, 125]);
       add(pg5, [TS(dx - 800, FY, 26470, 0, 9, 8.5, 15)], { name: 'D2.pavW', feature: 300 }); obb([dx - 800, FY + 47.6 * 8.5 / 2, 26470], [11.4 * 9, 47.6 * 8.5 / 2, 11.4 * 15]);
       add(pg7, p7F, { name: 'D2.pagoda7F', feature: 400, shadow: false });
       for (const [x, y, z, w] of platsF) add(TK.tgPlatformGeo(w, w, { H: 130, slab: 8 }), [T(x, y, z, 0)], { name: 'D2.isleF', feature: 500, shadow: false });
@@ -7195,6 +7201,11 @@ function buildWorld(gl, onProgress = () => {}) {
           { x: -700, z: 26700, r: 1000, cut: 1 }, { x: -700, z: 28300, r: 1000, cut: 1 }, { x: -1600, z: 26700, r: 750, cut: 1 },
           { x: 1500, z: 27900, r: 1400, cut: 1 }, { x: 3000, z: 30500, r: 3800, cut: 1 }, { x: -1700, z: 33300, r: 2700, cut: 1 },
           { x: dx, z: 21600, r: 650, cut: 1 }, { x: dx, z: 22800, r: 650, cut: 1 }, { x: dx, z: 24000, r: 650, cut: 1 },
+          // v2.8 台沿外几团单独高起来的云峰（复评：平视缺贴台沿的云）；悬台底下各一小团（塔基分段被云遮住）
+          { x: dx - 1180, z: 25450, r: 420, bank: 0.74 }, { x: dx - 1220, z: 26900, r: 460, bank: 0.76 }, { x: dx + 1200, z: 27150, r: 420, bank: 0.72 },
+          { x: dx + 1050, z: 24700, r: 380, bank: 0.72 },      // （北沿 ±560 / 27700 那两团去掉：贴着殿后第一排悬台，把台角吞了）
+          { x: dx, z: 29200, r: 500, bank: 0.66 },      // v2.8 复评：殿后第一排两座悬台底下那两团去掉（它们本来就在云台里，再加一团，云顶越过台面把台角吞了）
+          { x: dx - 1900, z: 29700, r: 450, bank: 0.7 }, { x: dx + 700, z: 30300, r: 420, bank: 0.7 },      // （dx-1500 / 28600 那团去掉：R5 前景那座悬台被吞了台角）
         ] };
       W.cloudBank.base = FY - 520;
       W.cloudBank.hx -= 200; W.cloudBank.hz -= 200;      // v2.7：压云顶的盒子往里收 200 米——台沿外不远云就能高过台面（参考 R1、R2：柱廊旁边就是一堵云），沿边略漫上台沿
@@ -7204,7 +7215,7 @@ function buildWorld(gl, onProgress = () => {}) {
           if (i % 4 === 1 && i < 12) { gi.push(T(dx, m[13], m[14], 0, 8)); for (const gx of TK.TG_GATE.xs) for (const gq of TK.TG_GATE.zs) col({ t: 'cyl', c: [dx + gx * 8, m[14] + gq * 8], r: 11, y0: m[13] - 10, y1: m[13] + 112 }); obb([dx, m[13] + 204, m[14]], [191, 92, 94]); }
           if (i % 3 === 2 && i % 4 !== 1 && i < runs - 1) for (const sx of [-1, 1]) ti.push(T(dx + sx * 172, m[13], m[14], 0, 2.3));
         });
-        add(gateG, gi, { name: 'D2.stairGates', feature: 150 }); add(pg5, ti, { name: 'D2.stairTowers', feature: 60, maxDist: 16000 }); }
+        add(TK.tgGateGeo({ lod: true }), gi, { name: 'D2.stairGates', feature: 150 }); add(pg5, ti, { name: 'D2.stairTowers', feature: 60, maxDist: 16000 }); }      // v2.8：阶上的三座小门用简模（全模的金叶柱太费）
       add(pg7, p7, { name: 'D2.pagoda7', feature: 400 }); add(pg5, p5, { name: 'D2.pagoda5', feature: 300 }); add(pg9, p9, { name: 'D2.pagoda9', feature: 600 });
       for (const [x, y, z, w] of plats) { add(TK.tgPlatformGeo(w, w, { H: 130, slab: 8 }), [T(x, y, z, 0)], { name: 'D2.isle', feature: 500 }); }
       // 台沿的朱栏（放大八倍；让开登天阶上来的那一段）
@@ -8926,7 +8937,7 @@ function frame(dt, silent) {
   kun.update(dt, G.time, player.vel);
   if (world.lady) stepLady(dt);
   R.clouds.p.cirrusDay = 0.3 - 0.16 * (env.pm || 0);      // v2.4：天宫一幕的午后，卷云只留一点丝
-  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.10 * pm, 1.0, 1.08 - 0.18 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.4 * pm; }      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
+  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.10 * pm, 1.0, 1.08 - 0.18 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.4 * pm; R.post.ambWarm = 0.8 * pm; }      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
   if (world.cloudBank) world.cloudBank.k = SHOT && G.lit >= 2 ? 1 : smoothstep(1500, 6500, player.pos[2]);      // 云山随行程“长”起来：标题画面、天门开场和观云台上都没有它（截图模式下行者钉在观云台，按灯数算）
   life.update(dt);
   for (const l of lanterns) l.visible = env.night > 0.03;
