@@ -2444,6 +2444,7 @@ layout(location = 2) out vec4 o2;
 layout(location = 3) out vec4 o3;
 layout(location = 4) out vec4 o4;
 uniform float uTime; uniform float uNight; uniform vec3 uCamPos; uniform float uFrame;
+uniform float uZoneOn; uniform vec4 uZones[6];      // v4.4 逐区亮灯：xy 区中心（x, z）、z 亮灯波前半径、w 区半径；uZoneOn = 0（标题画面）时一切照旧
 uniform sampler2D uReliefTex;     // 丹陛云龙浮雕的高度图（左右各一幅）
 uniform sampler2D uCaihuaTex;     // 和玺彩画（上枋 / 垫板 / 下枋 三条带）
 uniform sampler2D uPlaqueTex;     // 匾（画布写的字）
@@ -2564,7 +2565,9 @@ void main() {
       float wseed = hash21(floor(wq));
       albedo = mix(albedo, albedo * 0.42, win * wfade);
       albedo *= 1.0 - inBand * (1.0 - wfade) * 0.16;
-      emissive = vec3(1.0, 0.52, 0.19) * uNight * (win * wfade * step(0.5, wseed) * 1.2 + inBand * (1.0 - wfade) * 0.10);
+      float farWin = 1.0;
+      if (uZoneOn > 0.5 && P.z > 12000.0 && P.z < 42000.0) { vec2 fc = vec2(floor(uv.x / 70.0), floor(uv.y / 37.0)); farWin = step(0.62, 0.55 * hash21(fc) + 0.45 * hash21(floor(fc / vec2(4.0, 2.0)) + 9.0)) * 2.6 * step(0.03, fract(uv.y / 260.0)) * step(fract(uv.x / 70.0), 0.82); }      // v4.4（用户：远看是一条条“条形码”灯带）：远处的窗带拆成成簇亮灭的窗格，3–5 格一簇，亮四成上下
+      emissive = vec3(1.0, 0.52, 0.19) * uNight * (win * wfade * step(0.5, wseed) * 1.2 + inBand * (1.0 - wfade) * 0.10 * farWin);
       // v1.0 月门长墙（实例参数 w = 2）：夜里补一层很淡的冷色“月照”，不然整道墙逆光、只剩一块黑——参考帧里那道墙是被月光照亮的
       if (vIP.w > 1.5 && vIP.w < 2.5) emissive += albedo * vec3(0.55, 0.65, 0.85) * 0.22 * uNight;
       // v0.9 千柱林：实例参数 z = 这根柱的明暗（深处、随机），w = 1 标记。上部渐暗、靠云的下段窗带常亮一点，像参考里柱脚那片暖光
@@ -3262,6 +3265,10 @@ void main() {
     }
   }
 
+  // v4.4 逐区亮灯：灯笼、窗、隔扇的自发光在还没点亮的区里只留一成半底光；点灯后由近到远两三秒亮起
+  if (uZoneOn > 0.5 && (id == 11 || id == 19 || id == 7 || id == 22)) {
+    for (int i = 0; i < 6; i++) { vec4 zq = uZones[i]; float d = distance(P.xz, zq.xy); if (d < zq.w) { emissive *= mix(0.15, 1.0, smoothstep(zq.z + 350.0, zq.z, d)); break; } }
+  }
   // 倒影：压暗、偏冷（水把一部分光吃掉了），自发光也弱一些
   if (uDeform == 10) { albedo *= vec3(0.40, 0.46, 0.54); emissive *= 0.55; rough = max(rough, 0.5); }
 
@@ -8842,7 +8849,8 @@ const qs = new URLSearchParams(location.search);
 const SHOT = qs.get('shot') === '1';
 const store = { get(k, d) { try { const v = localStorage.getItem('yunque.' + k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem('yunque.' + k, v); } catch (e) { } } };
 
-const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 16.2, 17.15, 17.78, 19.3];      // v2.4：天宫一幕 14.6 → 16.2，配合 daycycle 里午后扳回的方位——低角度的暖光仍从左后方来      // v2.2：点亮登天阶之后由 16.2 改到 14.6——太阳高一些、从侧后方照过来，天宫的正面受光、檐下是硬阴影（参考视频 1 的光）；16.2 时殿的正面整片背光
+const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 18.1, 18.35, 18.6, 19.3];      // v4.4（用户：走过登天阶转黄昏 / 夜景、走到哪里亮到哪里）：点亮天宫之后是日落后的蓝调，往后一盏比一盏更深；开场和结尾不动。天宫白天的复刻机位用 ?tod=16.2 拍
+// 旧：[5.86, 6.25, 7.3, 8.5, 16.2, 17.15, 17.78, 19.3]      // v2.4：天宫一幕 14.6 → 16.2，配合 daycycle 里午后扳回的方位——低角度的暖光仍从左后方来      // v2.2：点亮登天阶之后由 16.2 改到 14.6——太阳高一些、从侧后方照过来，天宫的正面受光、檐下是硬阴影（参考视频 1 的光）；16.2 时殿的正面整片背光
 const VERSES = {
   A: ['第一盏 · 启明', '一灯既明，天光自东方来'], B: ['天柱', '柱擎青天，人行其下如尘'], C: ['万廊', '千柱无言，云从廊下过'],
   D: ['登天阶', '登阶万级，回首已是云端'], E: ['悬圃', '岛悬于空，松风不动'], F: ['鲲渊', '北冥有鱼，其名为鲲'], G: ['月门', '月出云阙，万灯皆明'],
@@ -9051,7 +9059,11 @@ function frame(dt, silent) {
   // 时辰推进（只进不退；通关后可用 [ ] 自由调节）
   // v2.4 登天阶“日影飞转”：一出千柱林、踏上第一级，时辰就往午后走（比平常快一些），到阶顶正好是从左后方贴地照过来的暖光。
   // 原来要等点亮天宫那盏灯才开始走——自动巡航和飞得快的人早就飞过广场了，天宫是在上午的光里看完的
-  if (G.lit === 3 && G.todTarget < STAGE_TOD[4] && world.forest && P.pos[2] > world.forest.z1 + 300 && Math.abs(P.pos[0] - world.forest.cx) < 2600) { G.todTarget = STAGE_TOD[4]; G.todRate = 0.14; }
+  // v4.4：登阶时时辰跟着爬升的进度走——出林是上午，阶腰午后，阶顶金色的黄昏（17.6），到天宫广场是日落（18.0）
+  if (G.lit === 3 && world.forest && world.stair2 && P.pos[2] > world.forest.z1 + 300 && Math.abs(P.pos[0] - world.forest.cx) < 2600) {
+    const S2 = world.stair2, k = clamp((P.pos[2] - S2.zS + 600) / (S2.zEnd - S2.zS + 600), 0, 1), want = P.pos[2] > S2.zEnd + 150 ? 18.0 : lerp(10.5, 17.6, k * k * (3 - 2 * k));
+    if (want > G.todTarget) { G.todTarget = want; G.todRate = 0.5; }
+  }
   if (day.tod < G.todTarget) { const d = G.todTarget - day.tod; day.tod = Math.min(G.todTarget, day.tod + Math.max(0.02, Math.min(d * (G.todRate || 0.09), 0.6)) * dt); }
   const env = day.update();
   if (!G.photo) P.update(dt, input, cam, G.time);
@@ -9291,6 +9303,7 @@ function frame(dt, silent) {
   if (SHOT) { env.forceShadows = true; env.snapExposure = R.frame < 2; }
   P2.fade = G.fade || 0;
   R.resize(canvas.width, canvas.height);
+  zoneLights();
   R.render(world, cam, env, dt);
 
   // ---------- HUD ----------
@@ -9323,6 +9336,24 @@ function stepLady(dt) {
   }
   let e = L.yawT - L.yaw; e = Math.atan2(Math.sin(e), Math.cos(e)); L.yaw += clamp(e, -0.45 * dt, 0.45 * dt);
   setBatchModel(L.batch, m4.trs(L.m, L.x, L.y + Math.abs(Math.sin(L.ph * 0.19)) * 0.006 * L.s, L.z, L.yaw, L.s));
+}
+
+// ---------- v4.4 逐区亮灯：每盏灯管一片区，点亮后两三秒由近到远亮起（波前从灯往外推），没点亮的区灯笼和窗只留一成半底光 ----------
+// 天门（A）、天柱（B）、月门（G）三区不设：开场和结尾锁定现状。登天阶那一片（D1）跟着人走：往上爬到哪，灯亮到前面四百米
+const ZONES = [['C', -400, 15500, 5200], ['D1', -3400, 19500, 5800], ['D', -4600, 27500, 5500], ['E', 800, 31000, 5000], ['F', -1400, 38200, 4500]];
+const zoneBuf = new Float32Array(24);
+function zoneLights() {
+  const F = R.F, on = !!(world.grp && world.grp.forest) && G.state !== 'title';
+  F.uZoneOn = on ? 1 : 0;
+  if (!on) return;
+  zoneBuf.fill(0);
+  ZONES.forEach(([id, x, z, Rz], i) => {
+    const b = world.beacons.find(q => q.id === (id === 'D1' ? 'D' : id));
+    let front = b && b.lit ? Rz * 1.2 * (b.t * b.t * (3 - 2 * b.t)) : -400;
+    if (id === 'D1' && !(b && b.lit) && G.lit === 3) front = Math.max(front, player.pos[2] - z + 400);
+    zoneBuf.set([x, z, front, Rz], i * 4);
+  });
+  F.uZones = zoneBuf;
 }
 
 // ---------- 自动巡航（?auto=1：自动飞完全程，用于演示与验收） ----------
