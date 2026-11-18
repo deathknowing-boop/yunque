@@ -1546,6 +1546,7 @@ uniform vec4 uCloudG;        // x 雾海的边缘增益（小 = 云面更虚更�
 uniform vec4 uBankA;         // xy 台山平面的中心, zw 半宽（x / z）：这块之内的云顶压在台面以下，云不漫上广场
 uniform vec4 uBankB;         // x 遮罩满值处云山的顶比云海基准高出多少（米）, y 台面高度, z 总量（0 = 没有；随行程渐入，云山是“长”起来的）, w 云面最低占包络顶的比例
 uniform vec4 uBankC;         // x 遮罩弱处的成云阈值（大 = 边上的云团更零散）, y 云山这一块的上界（米）, z 成云阈值随高度增加多少（大 = 塔顶更尖、高低更参差）, w 边缘增益
+uniform vec4 uBankD;         // v2.6+ x 云山 / 云台的云底高度（米；-1e5 = 没有底，从云海一直堆上来）
 uniform sampler2D uBankMask;  // 云山的遮罩（世界锁定，和美术遮罩同一块范围，256²）：r = 这里的云山有多高（0..1）
 uniform vec4 uBankR;         // 云山所在的平面范围：xmin, zmin, xmax, zmax。云层上界（uCloudA.w）不动，只在这个盒子里另加一段高的——不然整个天空的视线都要多走一遍
 // 最近一次 cloudTopH 的结果（紧跟着的 cloudDensity 会读）：
@@ -1611,7 +1612,7 @@ float cloudTopH(vec2 xz, out vec4 w) {
     float bt = uCloudA.x + mb * uBankB.z * uBankB.x * (0.93 + 0.14 * w.b);
     vec2 qb = abs(xz - uBankA.xy) - uBankA.zw;
     float dB = length(max(qb, 0.0)) + min(max(qb.x, qb.y), 0.0);
-    bt = min(bt, mix(uBankB.y - 70.0, 1e5, smoothstep(40.0, 560.0, dB)));
+    bt = min(bt, mix(uBankB.y - 70.0, 1e5, smoothstep(40.0, 560.0, dB)));      // （v2.7：“台沿外云高过台面”改在 world.js 里收小 cloudBank 的 hx / hz 做，这一行一改标题画面的云就差一级灰度）
     if (bt > top) { gBank = saturate((bt - top) / 300.0); gBankM = mb; gBankLo = top / bt; top = bt; }
   }
   return top * (1.0 - 0.34 * dv.r) + dv.g * uDistC.w;
@@ -1657,10 +1658,10 @@ float cloudDensity(vec3 p, float top, vec4 w, float lod, bool detailed, out floa
     // 于是底下是连成一片的云基，往上收成一座座高低不一的圆头云塔，侧面有鼓有凹（第一遍按高度场做，出来的是光滑的草垛）。
     // 包络底下原来的云海照旧：把原来的云面和虚实厚度按新包络折算回去
     H *= gBankLo; eg /= gBankLo;
-    float y0 = top * gBankLo * 0.55;
+    float y0 = max(top * gBankLo * 0.55, uBankD.x);      // 有云底时：包络从云底算起（积云的底是平的）
     float hb = saturate((p.y - y0) / max(top - y0, 1.0));
     float thr = (1.0 - gBankM) * uBankC.x + hb * hb * uBankC.z;      // uBankC.z > 1：到包络顶之前云就收完了——包络只是个上限，看不见它的形状（否则云顶被包络切成一个光滑的圆包）
-    float m = bn * 0.74 + 0.13 - thr;                                // 有没有云只看大尺度的噪声（几百米以上的团块）
+    float m = bn * 0.74 + 0.13 - thr;                                // 有没有云只看大尺度的噪声（几百米以上的团块）（v2.7 试过“云底以下直接 m = -1”省一次采样：标题画面的云差了一级灰度，退回）
     if (m > 0.0) {
       // 第二层（两倍频的 Worley）只用来“啃边”，往里渐弱：它不能凭空生出小云团——第一遍把它加在阈值上，云边是一大片爆米花似的碎点
       float ek = 0.24 * (1.0 - smoothstep(0.0, 0.3, m)) * (1.0 - saturate(lod * 1.3));      // 远了不啃：啃出来的小洞小于步长，只会闪
@@ -1669,8 +1670,9 @@ float cloudDensity(vec3 p, float top, vec4 w, float lod, bool detailed, out floa
     }
     // 边缘增益随距离放软：云团边上总有“刚冒头”的小尖（任意小），远处它们比步长还小，每个像素踩中踩不中全凭运气，是一片洒出去的碎点；
     // 增益小了，小尖的密度就低到看不见，大团的芯子照旧是实的
-    dBk = saturate((m - 0.02) * uBankC.w / (1.0 + 6.0 * lod)) * gBank;
-    sdBk = max(-m, 0.0) * 300.0 + 24.0;      // 到云边的距离估计（米）：噪声每米大约变 0.002，按 300 米 / 单位算（试过 420：会跨过薄的云边，云面出斑点）
+    dBk = saturate((m - 0.02) * uBankC.w / (1.0 + 6.0 * lod)) * gBank * smoothstep(uBankD.x - 40.0, uBankD.x + 160.0, p.y);
+    sdBk = max(-m, 0.0) * 300.0 + 24.0;
+    if (p.y < uBankD.x - 40.0) sdBk = max(sdBk, uBankD.x - 40.0 - p.y);      // 云底以下是空的：到云底的竖直距离      // 到云边的距离估计（米）：噪声每米大约变 0.002，按 300 米 / 单位算（试过 420：会跨过薄的云边，云面出斑点）
   }
   sd = (h01 - H) * top;
   float d = saturate((H - h01) * eg);
@@ -2142,6 +2144,7 @@ class Clouds {
     F.uBankR = this.bankRect || [0, 0, 0, 0]; F.uBankMask = this.bankMask;
     F.uBankA = bk ? [bk.cx, bk.cz, bk.hx, bk.hz] : [0, 0, 1, 1];
     F.uBankB = bk ? [bk.rise, bk.y, bk.k, bk.floor] : [0, 0, 0, 1];
+    F.uBankD = [bk && bk.base !== undefined ? bk.base : -1e5, 0, 0, 0];
     F.uBankC = bk ? [bk.amp === undefined ? 0.7 : bk.amp, Math.max(p.slabTop, p.deckTop + bk.rise * 1.08 * bk.k + 30), bk.taper === undefined ? 1.05 : bk.taper, bk.gain || 16] : [0.7, p.slabTop, 1.05, 16];
     F.uCloudB = [1 / p.weatherTile, 1 / p.baseTile, 1 / p.detailTile, p.sigma];
     F.uCloudC = [p.shape, p.detail, p.edgeGain, p.hmin];
@@ -2845,8 +2848,8 @@ void main() {
       float sc = length(c1 * vec2(1.0, 1.2));
       float fd = 1.0 - smoothstep(0.15, 0.6, fw / bh);
       float line = 1.0 - smoothstep(0.035, 0.06, 0.5 - abs(c1.y));
-      float relief = max(tgSpiral(q * vec2(1.0, 2.0)), line);      // v2.6：金卷草改成连成一条的如意云卷细线（参考 R1 门楼梁枋的金丝），不再是一个个圆圈
-      float gd = mix(0.26, relief, fd);
+      float relief = max(tgSpiral(q * vec2(1.0, 2.0)) * (0.55 + 0.6 * hash21(floor(q * vec2(1.0, 2.0)) + 7.0)), line);      // v2.7：每卷亮度不一（复评：线宽亮度太齐）      // v2.6：金卷草改成连成一条的如意云卷细线（参考 R1 门楼梁枋的金丝），不再是一个个圆圈
+      float gd = mix(0.26, relief, fd) * mix(1.0, 0.35, step(N.y, -0.6));      // 梁底压暗：金只在侧面
       vec3 dk = mix(vec3(0.026, 0.014, 0.010), vec3(0.046, 0.022, 0.014), fbm3(P * 0.8));
       vec3 au = vec3(0.90, 0.60, 0.23) * mix(1.0, 0.62 + 0.45 * smoothstep(0.0, 1.0, relief), fd);
       albedo = mix(dk, au, gd);
@@ -6164,12 +6167,12 @@ function petals(g, cx, yb, cz, o) {
 // 一圈贴着柱身的尖拱形金叶：叶根略收、中下部最宽、往上收成尖，叶尖略外翘。down：倒垂（柱头）。jade：叶心嵌暗青。
 // uv = 叶内坐标（u 横 0..1，v 叶根→叶尖 0..1），材质 22 / 13 按它画叶缘凸边、两道套线和叶心一滴
 function flames(g, cx, yb, cz, o) {
-  const { n, rb, rt, hp, w, ph = 0, down = false, jade = false, flare = 0 } = o;
+  const { n, rb, rt, hp, w, ph = 0, down = false, jade = false, flare = 0, root = 0 } = o;
   for (let i = 0; i < n; i++) {
     const a = (i + ph) / n * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
     const fn = (u, v) => {
       const wv = w * 1.12 * Math.pow(Math.sin(Math.PI * Math.min(1, 0.2 + v * 0.8)), 0.55) * Math.pow(1 - v, 0.45), s = (u - 0.5) * wv;
-      const rr = lerp(rb, rt, v) + 0.10 * w * Math.sin(Math.PI * v) + flare * Math.pow(v, 4) - s * s / (2 * rb) + 0.07 * w * (1 - Math.abs(2 * u - 1)) * (1 - 0.6 * v);
+      const rr = lerp(rb, rt, v) + 0.10 * w * Math.sin(Math.PI * v) + flare * Math.pow(v, 4) + root * Math.pow(1 - v, 3) - s * s / (2 * rb) + 0.07 * w * (1 - Math.abs(2 * u - 1)) * (1 - 0.6 * v);
       return [cx + ca * rr - sa * s, down ? yb - hp * v : yb + hp * v, cz + sa * rr + ca * s];
     };
     const uv = (u, v) => [u, v];
@@ -6204,13 +6207,17 @@ function column(g, x, y0, z, r, h, o = {}) {
     g.mat(TG, 0.9, 0.42 * r, 11.3);
     g.lathe(x, Y + 0.86 * r, z, [[1.26 * r, 0, 0.6], [1.40 * r, 0.10 * r, 0.85], [1.45 * r, 0.21 * r, 0.95], [1.40 * r, 0.32 * r, 0.85], [1.26 * r, 0.42 * r, 0.6]], sg, { us: TAU * 1.4 * r });
     band(Y + 1.28 * r, 0.07 * r, 1.24 * r, 0);
-    flames(g, x, Y + 1.12 * r, z, { n: 10, rb: 1.25 * r, rt: 1.0 * r, hp: 2.3 * r, w: 0.92 * r, ph: 0, flare: 0.16 * r });
-    flames(g, x, Y + 1.12 * r, z, { n: 10, rb: 1.33 * r, rt: 1.12 * r, hp: 1.35 * r, w: 0.72 * r, ph: 0.5, flare: 0.12 * r });
+    // v2.7：叶根外翻、贴着鼓腹翻上来（root），再加一圈最矮的第三层，长短叶前后遮叠
+    flames(g, x, Y + 1.0 * r, z, { n: 10, rb: 1.25 * r, rt: 1.0 * r, hp: 2.4 * r, w: 0.92 * r, ph: 0, flare: 0.16 * r, root: 0.22 * r });
+    flames(g, x, Y + 1.0 * r, z, { n: 10, rb: 1.34 * r, rt: 1.12 * r, hp: 1.45 * r, w: 0.74 * r, ph: 0.5, flare: 0.12 * r, root: 0.18 * r });
+    flames(g, x, Y + 0.95 * r, z, { n: 20, rb: 1.42 * r, rt: 1.30 * r, hp: 0.62 * r, w: 0.44 * r, ph: 0.25, flare: 0.06 * r, root: 0.08 * r });
     const yc = y0 + h - ch;
     g.mat(TG, 0.9, 0, 12); g.cyl(x, yc + 1.05 * r, z, 1.12 * r, 1.12 * r, 0.06 * r, sg);
     band(yc + 0.97 * r, 0.08 * r, 1.12 * r, 0);
     band(yc + 1.11 * r, ch - 1.11 * r, 1.10 * r, 2);
-    flames(g, x, yc + 0.98 * r, z, { n: 10, rb: 1.08 * r, rt: 0.99 * r, hp: 1.05 * r, w: 0.64 * r, down: true, jade: true });
+    // v2.7：柱头往外扩一圈承托（和梁底连起来，不像套在柱端的窄饰件），倒垂金叶加长
+    g.mat(TG, 0.85, 0.3 * r, 11.3); g.lathe(x, yc + 1.11 * r, z, [[1.10 * r, 0, 0.6], [1.18 * r, (ch - 1.11 * r) * 0.5, 0.8], [1.42 * r, ch - 1.11 * r - 0.02 * r, 0.9], [1.36 * r, ch - 1.11 * r, 0.7]], sg, { us: TAU * 1.25 * r });
+    flames(g, x, yc + 0.98 * r, z, { n: 10, rb: 1.10 * r, rt: 0.99 * r, hp: 1.45 * r, w: 0.66 * r, down: true, jade: true, root: 0.06 * r });
   } else {
     const bh = 0.55 * r, ch = 0.5 * r;
     g.mat(TG, 1, o.drum || 0, 0);
@@ -6419,7 +6426,8 @@ function tgGateGeo(o = {}) {
         const px = x0 + (i + 0.5) / n * L, len = i % 2 ? 0.75 : 1.15, yt = yb0 - 0.42;
         g.mat(TG, 0.9, 0, 14);
         g.cyl(px, yt - len * 0.45, z, 0.035, 0.035, len * 0.45, 6);
-        g.lathe(px, yt - len, z, [[0.001, 0, 0.7], [0.07, 0.04 * len, 0.8], [0.15, 0.18 * len, 0.9], [0.17, 0.33 * len, 0.95], [0.10, 0.48 * len, 0.9], [0.05, 0.53 * len, 0.8], [0.001, 0.56 * len, 0.7]], 10);
+        g.mat(TG, 0.9, 0.09, 11.0);      // v2.7：金铃带竖棱（不是光滑水滴）
+        g.lathe(px, yt - len, z, [[0.001, 0, 0.7], [0.07, 0.04 * len, 0.8], [0.15, 0.18 * len, 0.9], [0.17, 0.33 * len, 0.95], [0.10, 0.48 * len, 0.9], [0.05, 0.53 * len, 0.8], [0.001, 0.56 * len, 0.7]], 10, { us: 1.07 });
         g.mat(TG, 0.9, 1, 13);
         for (const sx of [-1, 1]) g.surf(3, 5, (u, v) => { const w = 0.16 * Math.sin(Math.PI * Math.min(1, 0.15 + v)) * Math.pow(1 - v, 0.5); return [px + sx * (0.06 + (u - 0.5) * w * 0.4), yt - len * 0.35 - v * len * 0.55, z + (u - 0.5) * w]; }, { uv: (u, v) => [u, v], ao: () => 0.8 });
       }
@@ -7132,8 +7140,9 @@ function buildWorld(gl, onProgress = () => {}) {
       const p7 = [], p5 = [], p9 = [], plats = [];
       const putP = (list, x, y, z, s, H, yaw = 0) => { list.push(T(x, y, z, yaw, s)); obb([x, y + 1.2 * s, z], [11.4 * s, 1.2 * s, 11.4 * s]); obb([x, y + (2.4 + H) / 2 * s, z], [5.6 * s, (H - 2.4) / 2 * s, 5.6 * s]); };
       const island = (x, y, z, w) => { plats.push([x, y, z, w]); obb([x, y - 65, z], [w / 2, 65, w / 2]); };      // v2.6：去掉通到云下的白台身（复评：白色巨墩像混凝土；参考里塔是从云里直接升起来的）
-      for (const sx of [-1, 1]) { putP(p7, dx + sx * 770, FY, 25990, 12, 60.4); putP(p5, dx + sx * 790, FY, 26950, 9.5, 47.6); }
-      for (const sx of [-1, 1]) { island(dx + sx * 700, FY + 150, 28050, 640); putP(p7, dx + sx * 700, FY + 150, 28050, 16, 60.4); }
+      // v2.7：门后两厢的塔放大、往里收（R4：门背后要有塔压住上半幅）；殿后第一排两座换九层、加高（R4、R7 的层层遮叠）
+      for (const sx of [-1, 1]) { putP(p7, dx + sx * 680, FY, 26000, 14.5, 60.4); putP(p5, dx + sx * 790, FY, 26950, 9.5, 47.6); }
+      for (const sx of [-1, 1]) { island(dx + sx * 760, FY + 150, 28050, 680); putP(p9, dx + sx * 760, FY + 150, 28050, 17.5, 73.2); }
       island(dx, FY + 300, 29100, 800); putP(p9, dx, FY + 300, 29100, 21, 73.2);
       island(dx - 600, FY + 60, 30100, 700); putP(p7, dx - 600, FY + 60, 30100, 19, 60.4, 0.785);
       island(dx + 1150, FY + 90, 29850, 700); putP(p7, dx + 1150, FY + 90, 29850, 18, 60.4, 0.785);
@@ -7179,7 +7188,16 @@ function buildWorld(gl, onProgress = () => {}) {
           { x: dx + 1500, z: 26650, r: 520, cut: 1 },      // 去镜台的航线从东沿这里出去：留一道口子
           // 复评后补的：阶顶两侧两座悬台脚下各一团（台是浮在云里的）；大殿背后、台山与后排悬台之间的深沟里一层（从殿后北望，原来是一道见底的白石峡谷）
           { x: dx - 1900, z: 24450, r: 700, bank: 0.64 }, { x: dx + 1900, z: 24450, r: 700, bank: 0.64 }, { x: dx, z: 27850, r: 600, bank: 0.62 },
+          // v2.7 第二重云海（参考 R2、R5、R6：云就在台面的高度、四面都是）：一整片有底的积云台，云底在台面下 520 米（cloudBank.base），
+          // 浮在雪原和镜台的上空、不埋它们；台山附近云顶压在台面以下（uBankA）。开口子：镜台 / 花境 / 悬圃 / 墙中殿上空开天窗，
+          // 登天阶上半段沿中轴留一道峡谷（上阶是从云里钻出去），去镜台的航线沿途让开
+          { x: dx, z: 27000, r: 5200, bank: 0.6 },      // 半径 6500 时登天阶半途慢了一成半（云台的盒子太大），收到 5200
+          { x: -700, z: 26700, r: 1000, cut: 1 }, { x: -700, z: 28300, r: 1000, cut: 1 }, { x: -1600, z: 26700, r: 750, cut: 1 },
+          { x: 1500, z: 27900, r: 1400, cut: 1 }, { x: 3000, z: 30500, r: 3800, cut: 1 }, { x: -1700, z: 33300, r: 2700, cut: 1 },
+          { x: dx, z: 21600, r: 650, cut: 1 }, { x: dx, z: 22800, r: 650, cut: 1 }, { x: dx, z: 24000, r: 650, cut: 1 },
         ] };
+      W.cloudBank.base = FY - 520;
+      W.cloudBank.hx -= 200; W.cloudBank.hz -= 200;      // v2.7：压云顶的盒子往里收 200 米——台沿外不远云就能高过台面（参考 R1、R2：柱廊旁边就是一堵云），沿边略漫上台沿
       // 登天阶上的牌楼与阙楼也换成同一套：牌楼 → 小一号的门阙（第 2、6、10 个平台；最上面那个平台不再立，南天门就在眼前），阙楼 → 五层楼阁
       { const gi = [], ti = [];
         lands.forEach((m, i) => {
@@ -7215,7 +7233,7 @@ function buildWorld(gl, onProgress = () => {}) {
       // 人尺度的参照：南天门内侧两座“正常大小”的殿（放大 1.6 倍，站在八十多米高的柱础旁边），御路两侧的灯
       add(TK.tgHallGeo({ nx: 5, nz: 3, dbl: false }), [T(dx - 300, FY, 25700, Math.PI / 2, 1.6), T(dx + 300, FY, 25700, -Math.PI / 2, 1.6)], { name: 'D2.smallHalls', feature: 20, maxDist: 7000 });
       for (const sx of [-1, 1]) obb([dx + sx * 300, FY + 17, 25700], [22, 17, 33]);
-      { const l2 = ln.slice(); for (let z = 25830; z < 26620; z += 158) for (const sx of [-1, 1]) l2.push(T(dx + sx * 190, FY + 2, z, 0, 16));
+      { const l2 = ln.slice();      // v2.7：广场上御路两侧那十二只落地灯笼去掉（放大 16 倍后读成满地滚的橙色球，参考里广场上没有）
         add(P.lantern, l2, { name: 'D2.lanterns', feature: 20, maxDist: 16000 }); }
       // v2.3 御路：阶顶穿过南天门直到大殿阶前的一条白石路，两边各一线金钉边石——广场有了中轴，石板的排布也有了主次
       { const yg = new Geo(), z0 = 24890, z1 = 26640, zc = (z0 + z1) / 2, L = z1 - z0;
@@ -8908,7 +8926,7 @@ function frame(dt, silent) {
   kun.update(dt, G.time, player.vel);
   if (world.lady) stepLady(dt);
   R.clouds.p.cirrusDay = 0.3 - 0.16 * (env.pm || 0);      // v2.4：天宫一幕的午后，卷云只留一点丝
-  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.07 * pm, 1.0, 1.08 - 0.12 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.3 * pm; }      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
+  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.10 * pm, 1.0, 1.08 - 0.18 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.4 * pm; }      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
   if (world.cloudBank) world.cloudBank.k = SHOT && G.lit >= 2 ? 1 : smoothstep(1500, 6500, player.pos[2]);      // 云山随行程“长”起来：标题画面、天门开场和观云台上都没有它（截图模式下行者钉在观云台，按灯数算）
   life.update(dt);
   for (const l of lanterns) l.visible = env.night > 0.03;
