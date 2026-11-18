@@ -7175,6 +7175,8 @@ function buildWorld(gl, onProgress = () => {}) {
       const WP = [[600, 24950, 8, 7, 10], [-630, 24985, 13.5, 16.5, 13.5]];      // v3.2：再加高到 16.5（复评：上层檐要进画面上半）      // v3.1：西边（R4 画面右侧）那座放大（参考 R4 右侧近景楼阁从上到下切进画框，左侧轻）
       for (const [x, z, a, b, c] of WP) { obb([dx + x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * c]); obb([dx + x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * c]); }
       add(pg5, WP.map(([x, z, a, b, c]) => TS(dx + x, FY, z, 0, a, b, c)), { name: 'D2.wingPav', feature: 300 });
+      // v3.3 R3 复评：大殿西端前面一座矮胖的五重檐楼（R3 画面右侧切框、打断大殿一路伸向天空的檐线；参考 R3 前景是一座重檐楼阁压着后面的长殿）
+      { const x = dx - 450, z = 26580, a = 12, b = 7; add(pg5, [TS(x, FY, z, 0, a, b, a)], { name: 'D2.frontPav', feature: 300 }); obb([x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * a]); obb([x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * a]); }
       // v3.0 大殿背后一座宽的七层楼阁（七层塔沿 x 拉宽成楼），立在薄台上：从广场北望、从 R3 仰望，大殿屋脊后面又压出一层层错高的檐（参考 R3、R4）
       // 广场西厢再立一座长楼阁（五层塔沿 z 拉长成楼，面朝广场）；东厢这一段让开去镜台的口子
       // v2.8 广场北端两厢各一座重檐配殿（面朝广场），把大殿两侧的空当收住；R3 那排长立面的一端有了前伸的殿
@@ -7212,7 +7214,8 @@ function buildWorld(gl, onProgress = () => {}) {
           { x: 1500, z: 27900, r: 1400, cut: 1 }, { x: 3000, z: 30500, r: 3800, cut: 1 }, { x: -1700, z: 33300, r: 2700, cut: 1 },
           { x: dx, z: 21600, r: 650, cut: 1 }, { x: dx, z: 22800, r: 650, cut: 1 }, { x: dx, z: 24000, r: 650, cut: 1 },
           // v2.8 台沿外几团单独高起来的云峰（复评：平视缺贴台沿的云）；悬台底下各一小团（塔基分段被云遮住）
-          { x: dx - 1180, z: 25450, r: 420, bank: 0.74 }, { x: dx - 1220, z: 26900, r: 460, bank: 0.76 }, { x: dx + 1200, z: 27150, r: 420, bank: 0.72 },
+          { x: dx - 1180, z: 25450, r: 420, bank: 0.74 }, { x: dx - 1220, z: 26900, r: 520, bank: 0.72 }, { x: dx + 1200, z: 27150, r: 420, bank: 0.72 },
+          // v3.3：dx-1220 / 26900 那团 0.76 → 0.72（云顶在大殿西边的天上冒出一团碎点，E、R3 都看得到）
           { x: dx + 1050, z: 24700, r: 380, bank: 0.72 },      // （北沿 ±560 / 27700 那两团去掉：贴着殿后第一排悬台，把台角吞了）
           { x: dx, z: 29200, r: 500, bank: 0.66 },      // v2.8 复评：殿后第一排两座悬台底下那两团去掉（它们本来就在云台里，再加一团，云顶越过台面把台角吞了）
           { x: dx - 1900, z: 29700, r: 450, bank: 0.7 }, { x: dx + 700, z: 30300, r: 420, bank: 0.7 },
@@ -7267,13 +7270,13 @@ function buildWorld(gl, onProgress = () => {}) {
       add(TK.tgGalleryGeo(26), [T(dx - 915, FY, 26485, -Math.PI / 2, 6), T(dx + 915, FY, 26485, Math.PI / 2, 6)], { name: 'D2.gallery', feature: 60, maxDist: 15000 });
       for (const sx of [-1, 1]) obb([dx + sx * 915, FY + 46, 26485], [30, 16, 350]);
       // v2.3 天女：照参考视频 1 里那位汉服女子（Tripo 模型）。视频里人只到柱础一半高——这里的柱础八十多米，所以她身高四十六米，
-      // v3.2：起点西移 140 米、南移 50 米，先背身站 8 秒再走（R2 复评：参考里她站在暖亮的石板上；原位置正好落在门柱的长影里）
+      // v3.2：起点挪出门柱长影、先背身站 8 秒再走（v3.3 再往画面中间收：dx-200 / 25550，和右侧金柱脚隔一个身位）（R2 复评：参考里她站在暖亮的石板上；原位置正好落在门柱的长影里）
       // 在南天门内侧与广场西半边缓缓踱步，走到台沿停下来看一会儿云，再踱回来（main.js 的 stepLady）。另有几位常人大小的宫女站在小殿前
       if (P.lady.nv > 16) {
-        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 260, FY + 0.05, 25540, 0, LS), feature: 60, twoSided: true });
+        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 200, FY + 0.05, 25550, 0, LS), feature: 60, twoSided: true });
         W.batches.push(lb);
-        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 8, x: dx - 260, z: 25540, yaw: -0.8, yawT: -0.8, ph: 0, m: m4.create(),
-          path: [[dx - 260, 25540, -0.8, 8], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
+        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 8, x: dx - 200, z: 25550, yaw: -0.8, yawT: -0.8, ph: 0, m: m4.create(),
+          path: [[dx - 200, 25550, -0.8, 8], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
         add(P.lady, [T(dx - 262, FY + 0.05, 25668, 2.2, 1.68), T(dx + 262, FY + 0.05, 25672, -2.3, 1.65), T(dx + 268, FY + 0.05, 25690, -1.2, 1.7)], { name: 'D2.maids', feature: 2, maxDist: 1200, deform: 2, deformP: [0.007, 1.1, 0, 0], twoSided: true });
       }
       grpOf(n1, 'forest'); for (let i = c1; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
@@ -8950,7 +8953,7 @@ function frame(dt, silent) {
   kun.update(dt, G.time, player.vel);
   if (world.lady) stepLady(dt);
   R.clouds.p.cirrusDay = 0.3 - 0.16 * (env.pm || 0);      // v2.4：天宫一幕的午后，卷云只留一点丝
-  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.10 * pm, 1.0, 1.08 - 0.18 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.4 * pm; R.post.ambWarm = 0.8 * pm; }      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
+  { const pm = env.pm || 0; R.post.tint = [0.95 + 0.13 * pm, 1.0, 1.08 - 0.21 * pm]; R.post.contrast = 1.32 + 0.08 * pm; R.post.ambCut = 0.5 * pm; R.post.ambWarm = 1.0 * pm; }      // v3.3 复评 B3：日照面再暖、檐下蓝灰填光再压（0.10/0.18/0.4/0.8 → 0.13/0.21/0.5/1.0）      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
   if (world.cloudBank) world.cloudBank.k = SHOT && G.lit >= 2 ? 1 : smoothstep(1500, 6500, player.pos[2]);      // 云山随行程“长”起来：标题画面、天门开场和观云台上都没有它（截图模式下行者钉在观云台，按灯数算）
   life.update(dt);
   for (const l of lanterns) l.visible = env.night > 0.03;
