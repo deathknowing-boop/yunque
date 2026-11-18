@@ -7176,7 +7176,8 @@ function buildWorld(gl, onProgress = () => {}) {
       for (const [x, z, a, b, c] of WP) { obb([dx + x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * c]); obb([dx + x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * c]); }
       add(pg5, WP.map(([x, z, a, b, c]) => TS(dx + x, FY, z, 0, a, b, c)), { name: 'D2.wingPav', feature: 300 });
       // v3.3 R3 复评：大殿西端前面一座矮胖的五重檐楼（R3 画面右侧切框、打断大殿一路伸向天空的檐线；参考 R3 前景是一座重檐楼阁压着后面的长殿）
-      { const x = dx - 450, z = 26580, a = 12, b = 7; add(pg5, [TS(x, FY, z, 0, a, b, a)], { name: 'D2.frontPav', feature: 300 }); obb([x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * a]); obb([x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * a]); }
+      { const x = dx - 370, z = 26540, a = 12, b = 9;      // v3.4：往镜头、往画内挪，加高（复评：上两层檐要盖住大殿西端）
+        add(pg5, [TS(x, FY, z, 0, a, b, a)], { name: 'D2.frontPav', feature: 300 }); obb([x, FY + 1.2 * b, z], [11.4 * a, 1.2 * b, 11.4 * a]); obb([x, FY + 47.6 * b / 2, z], [5.6 * a, 47.6 * b / 2, 5.6 * a]); }
       // v3.0 大殿背后一座宽的七层楼阁（七层塔沿 x 拉宽成楼），立在薄台上：从广场北望、从 R3 仰望，大殿屋脊后面又压出一层层错高的檐（参考 R3、R4）
       // 广场西厢再立一座长楼阁（五层塔沿 z 拉长成楼，面朝广场）；东厢这一段让开去镜台的口子
       // v2.8 广场北端两厢各一座重檐配殿（面朝广场），把大殿两侧的空当收住；R3 那排长立面的一端有了前伸的殿
@@ -7220,6 +7221,7 @@ function buildWorld(gl, onProgress = () => {}) {
           { x: dx, z: 29200, r: 500, bank: 0.66 },      // v2.8 复评：殿后第一排两座悬台底下那两团去掉（它们本来就在云台里，再加一团，云顶越过台面把台角吞了）
           { x: dx - 1900, z: 29700, r: 450, bank: 0.7 }, { x: dx + 700, z: 30300, r: 420, bank: 0.7 },
           // v3.1 复评 B2：云切进建筑之间——R5 殿后塔与塔之间两团（塔基被吃掉一段，台面本身让开）。广场西沿外那一团试过：R2 里几乎看不到，R7 天上多出一片碎云，去掉
+          { x: dx - 1020, z: 25700, r: 300, bank: 0.68 }, { x: dx + 1020, z: 25900, r: 300, bank: 0.68 }, { x: dx - 1020, z: 26700, r: 280, bank: 0.68 }, { x: dx + 1000, z: 26500, r: 280, bank: 0.68 },      // v3.4 复评 B2：广场东西两沿各两小团，云顶略过台沿（R6 俯看台基边线不再一眼读到底）
           { x: dx + 1250, z: 28750, r: 520, bank: 0.74 }, { x: dx + 330, z: 28750, r: 480, bank: 0.74 },      // 复评：0.8 时竖着凸出一团圆云，压矮摊宽      // （dx-1500 / 28600 那团去掉：R5 前景那座悬台被吞了台角）
         ] };
       W.cloudBank.base = FY - 520;
@@ -7270,13 +7272,13 @@ function buildWorld(gl, onProgress = () => {}) {
       add(TK.tgGalleryGeo(26), [T(dx - 915, FY, 26485, -Math.PI / 2, 6), T(dx + 915, FY, 26485, Math.PI / 2, 6)], { name: 'D2.gallery', feature: 60, maxDist: 15000 });
       for (const sx of [-1, 1]) obb([dx + sx * 915, FY + 46, 26485], [30, 16, 350]);
       // v2.3 天女：照参考视频 1 里那位汉服女子（Tripo 模型）。视频里人只到柱础一半高——这里的柱础八十多米，所以她身高四十六米，
-      // v3.2：起点挪出门柱长影、先背身站 8 秒再走（v3.3 再往画面中间收：dx-200 / 25550，和右侧金柱脚隔一个身位）（R2 复评：参考里她站在暖亮的石板上；原位置正好落在门柱的长影里）
+      // v3.2：起点挪出门柱长影、先背身站 20 秒再走（截图一张 30 帧，连拍几张她也不会走开）（v3.3 再往画面中间收：dx-200 / 25550，和右侧金柱脚隔一个身位）（R2 复评：参考里她站在暖亮的石板上；原位置正好落在门柱的长影里）
       // 在南天门内侧与广场西半边缓缓踱步，走到台沿停下来看一会儿云，再踱回来（main.js 的 stepLady）。另有几位常人大小的宫女站在小殿前
       if (P.lady.nv > 16) {
-        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 200, FY + 0.05, 25550, 0, LS), feature: 60, twoSided: true });
+        const LS = 46, lb = makeBatch(gl, P.lady, { name: 'D2.lady', deform: 2, deformP: [0.011, 1.25, 0, 0], model: T(dx - 215, FY + 0.05, 25550, 0, LS), feature: 60, twoSided: true });
         W.batches.push(lb);
-        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 8, x: dx - 200, z: 25550, yaw: -0.8, yawT: -0.8, ph: 0, m: m4.create(),
-          path: [[dx - 200, 25550, -0.8, 8], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
+        W.lady = { batch: lb, s: LS, y: FY + 0.05, speed: 13, i: 0, wait: 20, x: dx - 215, z: 25550, yaw: -0.8, yawT: -0.8, ph: 0, m: m4.create(),
+          path: [[dx - 215, 25550, -0.8, 20], [dx - 520, 25590], [dx - 728, 25672, -1.571, 9], [dx - 560, 25805], [dx - 430, 26250], [dx - 150, 26380, 0, 6], [dx - 112, 25950]] };
         add(P.lady, [T(dx - 262, FY + 0.05, 25668, 2.2, 1.68), T(dx + 262, FY + 0.05, 25672, -2.3, 1.65), T(dx + 268, FY + 0.05, 25690, -1.2, 1.7)], { name: 'D2.maids', feature: 2, maxDist: 1200, deform: 2, deformP: [0.007, 1.1, 0, 0], twoSided: true });
       }
       grpOf(n1, 'forest'); for (let i = c1; i < W.colliders.length; i++) W.colliders[i].grp = 'forest';
