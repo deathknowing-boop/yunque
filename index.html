@@ -2457,7 +2457,7 @@ uniform int uDeform; uniform vec4 uDeformP; uniform vec4 uDeformQ;
 void tgGold(float relief, float g, out vec3 alb, out float rough) {
   float r = clamp(relief, 0.0, 1.0);
   float rr = r * r * (3.0 - 2.0 * r);
-  alb = mix(vec3(0.026, 0.011, 0.0056), vec3(0.26, 0.075, 0.022), smoothstep(0.0, 0.55, rr));      // v4.3（复评）：GPT 给的三档 #2D1B11 / #8C4D29 / #E5A05A（换成线性）      // v4.2（用户：柱础金比参考的橙黄假）：凹处压到近黑的泥金，中间调是暗橙铜
+  alb = mix(vec3(0.026, 0.011, 0.0056), vec3(0.22, 0.085, 0.034), smoothstep(0.0, 0.55, rr));      // v4.7（v4.3 复评 D3：大块铜面像橙漆）：中间调降饱和、略压暗 (0.26,0.075,0.022) → (0.22,0.085,0.034)，暖色留给凸缘      // v4.3（复评）：GPT 给的三档 #2D1B11 / #8C4D29 / #E5A05A（换成线性）      // v4.2（用户：柱础金比参考的橙黄假）：凹处压到近黑的泥金，中间调是暗橙铜
   alb = mix(alb, vec3(0.78, 0.35, 0.10), smoothstep(0.62, 1.0, rr)) * (0.86 + 0.24 * g);      // 只有凸起的高光是亮橙金
   rough = mix(0.72, mix(0.64, 0.30, smoothstep(0.6, 1.0, rr)), smoothstep(0.0, 0.5, rr)) + 0.08 * g;      // 粗糙一点：太光的金只映天，偏青偏白
 }
@@ -2494,14 +2494,14 @@ void main() {
       for (int i = 0; i < 12; i++) {
         vec4 wk = uWake[i]; if (wk.w <= 0.0) continue;
         float a = wk.z, fade = 1.0 - a / uWakeP.z, d = distance(q, wk.xy), rr = 2.0 + a * uWakeP.y;
-        float band = 1.0 - smoothstep(0.0, 3.0 + a * 9.0, abs(d - rr));
-        float core = 1.0 - smoothstep(2.0, 4.0 + a * 6.0, d);
+        float band = 1.0 - smoothstep(0.0, 5.0 + a * 16.0, abs(d - rr));      // v4.7（复评：扰动挤在中线，两翼没连成尾浪）：环带宽 1.7 倍、点更密
+        float core = 1.0 - smoothstep(3.0, 6.0 + a * 10.0, d);
         wm = max(wm, max(band * 0.85, core) * wk.w * fade);
         crest = max(crest, (1.0 - smoothstep(0.0, 1.5 + a * 3.0, abs(d - rr))) * wk.w * fade);
       }
       float wn = n3(vec3(q.x * 0.12, q.y * 0.05, uTime * 0.6)) * 0.6 + n3(vec3(q * 0.45, uTime * 1.1)) * 0.4;
       if (wn < wm * 1.25 - 0.2) discard;
-      wakeFoam = crest * smoothstep(0.45, 0.7, wn);
+      wakeFoam = crest * smoothstep(0.62, 0.78, wn);      // 泡沫只挂在两成上下的波脊上
     }
   }
   vec3 N = normalize(vNormal);
@@ -2905,8 +2905,10 @@ void main() {
       if (fw < 0.5) albedo *= 0.95 + 0.10 * n3(vec3(uv * vec2(0.09, 0.3) / max(sl * 0.01, 0.01), h * 17.0)) * (1.0 - smoothstep(0.05, 0.5, fw));
       float lf = fbm3(P * 0.0045 + 9.0);
       albedo *= mix(vec3(0.90, 0.89, 0.88), vec3(1.08, 1.02, 0.93), smoothstep(0.25, 0.8, lf));
-      albedo *= (1.0 - 0.11 * seam) * (1.0 - 0.20 * seamB) * (1.0 + 0.08 * bev);
-      rough = 0.56 + 0.2 * g - 0.14 * smoothstep(0.55, 0.85, lf); bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 - seamB * 2.0 + bev * 0.3; bumpK = 0.03;
+      float vein = (1.0 - smoothstep(0.0, 0.035, abs(n3(vec3(P.xz * 0.16 + h * 13.0, hc * 5.0)) - 0.5))) * (1.0 - smoothstep(0.02, 0.2, fw));      // v4.7（v4.3 复评 C：近处太平、阴影里一整片米灰）：板内低对比的石纹
+      float chip = step(0.62, n3(P * 0.9 + 4.0));      // 受光的崩边只在几处
+      albedo *= (1.0 - 0.06 * vein) * (1.0 - 0.11 * seam) * (1.0 - 0.20 * seamB) * (1.0 + (0.08 + 0.10 * chip) * bev);
+      rough = 0.56 + 0.2 * g - 0.14 * smoothstep(0.55, 0.85, lf) + 0.16 * (h - 0.5) + 0.08 * vein;      // 逐板粗糙度不同（有的板磨得亮一些） bumpH = g * 0.5 + fine * 0.15 - seam * 1.5 - seamB * 2.0 + bev * 0.3; bumpK = 0.03;
     } else if (k == 8) {
       // v2.5 斗拱构件：深褐近黑的木（参数 A 选偏黑 / 偏红褐），一圈细金边（v2.4 的七成），不要白线、不要退晕的青绿——
       // 参考视频 1 的檐下是全殿最暗的一带，暗里只有碎金
@@ -3290,7 +3292,7 @@ void main() {
   }
   // 倒影：压暗、偏冷（水把一部分光吃掉了），自发光也弱一些
   if (uDeform == 10) { albedo *= vec3(0.40, 0.46, 0.54); emissive *= 0.55; rough = max(rough, 0.5); }
-  if (wakeFoam > 0.0) { albedo = mix(albedo, vec3(0.80, 0.80, 0.76), wakeFoam * 0.7); rough = mix(rough, 0.9, wakeFoam); }
+  if (wakeFoam > 0.0) { albedo = mix(albedo, vec3(0.62, 0.62, 0.58), wakeFoam * 0.6); rough = mix(rough, 0.9, wakeFoam); }      // v4.7：泡沫压暗一档（复评：碎片翻白、脏）
 
   // 凹凸：解析坡度 + 高度导数
   if (dot(slope, slope) > 0.0) N = normalize(N - T * slope.x - B * slope.y);
@@ -4717,8 +4719,8 @@ class DayCycle {
     let sunAz = -62 - 250 * sp;
     // v2.4 天宫一幕（16.2）：太阳压到二十几度、仍在左后方——暖光贴着地扫过广场，柱影拖得很长（参考视频 1）。
     // 按原来的轨迹，这个高度的太阳已经转到正左，殿的正面整片背光；所以午后把方位往回扳四十度，日落前（17.1）扳回原轨：黄昏和月门的光不动，上午以前也不动
-    const pm = smoothstep(12.5, 15.8, t) * (1 - smoothstep(16.35, 17.1, t));
-    sunAz += 40 * pm;
+    const pm0 = smoothstep(12.5, 15.8, t), pm = pm0 * (1 - smoothstep(16.35, 17.1, t)), pmAz = pm0 * (1 - smoothstep(17.3, 17.9, t));      // v4.7（v4.6 复评：阶顶仍偏冷灰）：方位的回扳推迟到 17.3–17.9——登阶最后三成太阳仍在左后方，低角度金光斜扫阶缘和门柱；pm 本身（收卷云、压暗部）不变
+    sunAz += 40 * pmAz;
     if (this.azFlip > 0) sunAz = lerp(sunAz, -180 - sunAz, this.azFlip);
     // 月亮：日落后从左前升起
     let mt = t < 12 ? t + 24 : t;
@@ -7475,6 +7477,12 @@ function buildWorld(gl, onProgress = () => {}) {
     const mo = { deform: 10, deformP: [Y, 0, 0, 0], deformQ: pool, twoSided: true, shadow: false };
     add(towerGeo, tw.map(mir), { name: 'M.towerR', feature: 600, ...mo });
     add(mtGeo, mtw.map(mir), { name: 'M.towerPagodaR', feature: 500, ...mo });
+    // v4.7（v4.3 复评 D1 / R7：R4、R5 左后景的天际线挖空一块，左侧缺深色远塔托住近景）：镜台东北、悬圃以东的云海上立两座远塔——
+    //   白石方柱托着天宫同款的九层塔（简模、不投影），在 R4 里落在左侧那块空天里；离 D→E 航线两公里以上
+    { const far = [[3600, 32800, 2100, 28, 0.3], [5600, 30600, 2000, 24, -0.5]], fb = [], fp = [];
+      for (const [x, z, h, s2, yaw] of far) { fb.push(TS(x, 0, z, yaw, 1, h / 2700, 1)); fp.push(TS(x, h, z, yaw, s2, s2, s2)); obb([x, h / 2, z], [160, h / 2, 160]); }
+      add(K.megaPillarGeo({ W: 300, D: 300, H: 2700, rc: 50, pitch: 20, depth: 4, panel: 50, white: true }), fb, { name: 'M.farBase', feature: 400, shadow: false });
+      add(TK.tgPagodaGeo({ tiers: 9, taper: 0.88, th: 4.6, w: 12, lod: true }), fp, { name: 'M.farPagodas', feature: 400, shadow: false }); }
     add(P.hallL, halls.map(mir), { name: 'M.hallR', feature: 200, ...mo });
     add(P.hallM, hallsM.map(mir), { name: 'M.hallsR', feature: 120, ...mo });
     W.mirror = { ...M, pool };
@@ -7837,6 +7845,24 @@ function buildWorld(gl, onProgress = () => {}) {
       for (const zz of [Z0 + 60, Z1 - 60]) { add(TK.tgPlatformGeo(460, 460, { H: 140, slab: 8 }), [T(WX, YT + 140, zz, 0)], { name: 'N.cornerBase', feature: 400, shadow: false }); obb([WX, YT + 70, zz], [230, 70, 230]);
         jl.push(TS(WX, YT + 140, zz, 0, JS * 1.15, JS, JS * 1.15)); obb([WX, YT + 140 + 23.8 * JS, zz], [6.5 * JS * 1.15, 23.8 * JS, 6.5 * JS * 1.15]); }
       add(TK.tgPagodaGeo({ tiers: 5 }), jl, { name: 'N.cornerTowers', feature: 400, shadow: false }); }
+    // v4.7（v4.3 复评 B：殿后西侧靠主轴缺一个中景落脚点）：西墙朝宫殿的一面挑出一座临水台——和东边镜台对位（光门缝以北、z 28350 起，台面 2900 高出殿后的云）
+    //   从墙面向主轴伸出 520 米、沿墙 1300 米（复评给的 220 米在轴线机位里只是墙上一个小凸起，读不出台）；台顶一池镜水，靠墙一端一座两层敞殿压住一段白墙，台的外侧（朝主轴）垂一道瀑布落到雪原上
+    { const TX0 = WX + TH / 2, TD = 520, TZ0 = 28300, TL = 1300, TYv = 2900, tzc = TZ0 + TL / 2, txc = TX0 + TD / 2, tg = new Geo();
+      tg.mat(MAT.MEGA, 1, 120, 1); tg.box(txc, (SN[1] + TYv) / 2 - 1, tzc, TD, TYv - SN[1] - 2, TL, { skip: '-y' });
+      tg.box(TX0 + TD + 14, TYv - 6, tzc, 28, 16, TL + 56); tg.box(TX0 + TD + 26, TYv - 60, tzc, 52, 22, TL + 80);
+      for (const sz of [-1, 1]) { tg.box(txc + 14, TYv - 6, tzc + sz * (TL / 2 + 14), TD + 28, 16, 28); tg.box(txc + 26, TYv - 60, tzc + sz * (TL / 2 + 26), TD + 52, 22, 52); }
+      tg.mat(MAT.CAIHUA, 0.6, 0, 0); tg.box(TX0 + TD + 10, TYv - 33, tzc, 20, 32, TL + 30, { uvs: 0.05 });
+      const RIM = 14; tg.mat(MAT.STONE, 1, 10, 0);
+      tg.box(TX0 + TD - RIM / 2, TYv - 0.2, tzc, RIM, 3.6, TL, { aoB: 0.6 });
+      for (const sz of [-1, 1]) tg.box(txc, TYv - 0.2, tzc + sz * (TL / 2 - RIM / 2), TD, 3.6, RIM, { aoB: 0.6 });
+      tg.mat(MAT.PAVING, 1, 8, 0); tg.box(TX0 + 90, TYv + 0.2, tzc, 180, 1.2, TL - 2 * RIM, { skip: '-y' });
+      tg.mat(MAT.WATER, 1, 0, 1); tg.box(TX0 + 180 + (TD - 180 - RIM) / 2, TYv - 1, tzc, TD - 180 - RIM, 2, TL - 2 * RIM, { skip: '-y-x+x-z+z' });
+      add(tg, null, { name: 'N.terrace', feature: 800 });
+      obb([txc, (SN[1] + TYv) / 2, tzc], [TD / 2, (TYv - SN[1]) / 2, TL / 2]);
+      add(TK.tgHallGeo({ nx: 9, nz: 3, lod: true }), [T(TX0 + 100, TYv, tzc, Math.PI / 2, 12)], { name: 'N.terraceHall', feature: 300, shadow: false });      // 天宫同款的朱柱黑瓦重檐殿（简模、不投影）
+      obb([TX0 + 100, TYv + 150, tzc], [85, 150, 245]);
+      add(P.fall, [TS(TX0 + TD + 8, TYv - 80, tzc + 260, Math.PI / 2, 2.2, (TYv - 80 - SN[1]) / 700, 2.2)], { name: 'N.terraceFall', alpha: true, twoSided: true, feature: 200, shadow: false });
+      W.fallMist.push({ p: [TX0 + TD + 90, SN[1] + 120, tzc + 260], w: 180 }); }
     // 光门缝：一道竖直的自发光条（暖金），从雪面直到墙头以下三百米
     const sg = new Geo(); sg.mat(MAT.GLOW, 1, 90, 0); sg.box(0, 0, 0, 8, 1, 22);
     add(sg, [{ m: TS(WX + TH / 2 - 6, (SN[1] + YT - 300) / 2, SZ, 0, 1, YT - 300 - SN[1], 1), p: [1, 0, 1, 0] }], { name: 'N.slit', feature: 10, shadow: false });
@@ -8239,7 +8265,7 @@ class Player {
     const up = [0, 1, 0];
     const wk = this.state === 'walk';
     this.skimCam = damp(this.skimCam || 0, wk ? 0 : this.skimLift || 0, 1.6, dt);      // v4.6 贴云冲浪：镜头抬高、往下看一点，身后犁开的沟和两侧云脊才进得了画面
-    const sl = this.skimCam * 9, sd = this.skimCam * 1, sb = this.skimCam * 16;      // 抬 9 米、退 16 米
+    const sl = this.skimCam * 5, sd = this.skimCam * 0.5, sb = this.skimCam * 9;      // 抬 5 米、退 9 米（v4.6 复评：抬 9 退 16 时人只占画高 5%、圆门出画）
     let cp = [this.pos[0] - cf[0] * (this.camDist + sb), this.pos[1] - cf[1] * (this.camDist + sb) + (wk ? 2.0 : 2.7 + 0.8 * sp01 + 7 * this.wide) + sl, this.pos[2] - cf[2] * (this.camDist + sb)];
     let tgt = [this.pos[0] + cf[0] * 40, this.pos[1] + cf[1] * 40 + 1.6 - sd, this.pos[2] + cf[2] * 40];
     if (this.shake > 0.002) { const s = this.shake * 0.5; cp[0] += Math.sin(time * 61) * s; cp[1] += Math.cos(time * 53) * s; cp[2] += Math.sin(time * 47) * s; }
@@ -9286,8 +9312,8 @@ function frame(dt, silent) {
             const side = Math.random() < 0.5 ? -1 : 1, back = Math.random() * (kind === 2 ? 2.5 : 6), lat = (kind === 1 ? 0.1 + 0.25 * Math.random() : 0.06 + 0.16 * Math.random()) * sp, up = (kind === 1 ? 0.04 + 0.06 * Math.random() : 0.05 + 0.07 * Math.random()) * sp;
             SP.push({ p: [x - fx0 * back + rx * side * 1.5, (kind === 1 ? Math.max(sy + 4, y - 1) : sy + 0.3), z - fz0 * back + rz * side * 1.5], v: [rx * side * lat + fx0 * sp * (kind === 3 ? 0.25 : 0.6), up, rz * side * lat + fz0 * sp * (kind === 3 ? 0.25 : 0.6)], t: 0, life: kind === 1 ? 1.2 + Math.random() * 1.0 : kind === 2 ? 0.18 + Math.random() * 0.2 : 0.5 + Math.random() * 0.6, kind, s: Math.random(), y0: sy });
           }
-          if (kind === 2 && (fx._wk = (fx._wk || 0) + dt) > 0.045) { fx._wk = 0; R2.push({ p: [x, sy + 0.05, z], t: 0, life: 1.0, big: 3 + sp * 0.015 }); }      // v4.6：V 形涟漪降成辅层
-          if (kind === 2 && (fx._wp = (fx._wp || 0) + dt) > 0.1) { fx._wp = 0; (G.wake || (G.wake = [])).push({ x, z, t0: G.time, k, sp }); }      // v4.6 尾浪（复评：倒影在航迹附近依旧平整）：每 0.1 秒记一个起浪点，倒影着色器在这些点外扩的环带里把倒影打碎
+          if (kind === 2 && (fx._wk = (fx._wk || 0) + dt) > 0.045) { fx._wk = 0; R2.push({ p: [x, sy + 0.05, z], t: 0, life: 0.6, big: 2 + sp * 0.01 }); }      // v4.7：再弱一档（复评：还看得到一枚独立的圆环）      // v4.6：V 形涟漪降成辅层
+          if (kind === 2 && (fx._wp = (fx._wp || 0) + dt) > 0.06) { fx._wp = 0; (G.wake || (G.wake = [])).push({ x, z, t0: G.time, k, sp }); }      // v4.6 尾浪（复评：倒影在航迹附近依旧平整）：每 0.1 秒记一个起浪点，倒影着色器在这些点外扩的环带里把倒影打碎
         }
       } else { G.skim = 0; P.skimLift = 0; }
       for (let i = SP.length - 1; i >= 0; i--) {
@@ -9423,11 +9449,11 @@ function zoneLights() {
 const wakeBuf = new Float32Array(48);
 function wakeLights() {
   const F = R.F, W = G.wake || [];
-  while (W.length && (G.time - W[0].t0 > 1.3 || G.time < W[0].t0)) W.shift();
-  if (W.length > 12) W.splice(0, W.length - 12);
+  while (W.length && (G.time - W[0].t0 > 0.75 || G.time < W[0].t0)) W.shift();
+  if (W.length > 12) W.splice(0, W.length - 12);      // v4.7：每 0.06 秒一个点，12 个盖住最近 0.7 秒（近尾连续）
   wakeBuf.fill(0);
   W.forEach((w, i) => wakeBuf.set([w.x, w.z, G.time - w.t0, w.k], i * 4));
-  F.uWake = wakeBuf; F.uWakeP = [W.length, W.length ? 0.33 * W[W.length - 1].sp : 0, 1.3, 0];
+  F.uWake = wakeBuf; F.uWakeP = [W.length, W.length ? 0.33 * W[W.length - 1].sp : 0, 0.75, 0];
 }
 
 // ---------- 自动巡航（?auto=1：自动飞完全程，用于演示与验收） ----------
