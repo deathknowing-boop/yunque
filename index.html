@@ -61,6 +61,11 @@ canvas#gl { position: fixed; inset: 0; width: 100vw; height: 100vh; display: blo
 #pause button:hover { border-color: var(--gold); color: var(--gold); }
 #pause button.on { background: var(--gold); color: #1a1208; border-color: var(--gold); }
 #pause input[type=range] { width: 190px; accent-color: #f2c477; }
+#pause #todr { width: 160px; }
+#pause #todv { font-style: normal; font-size: 12px; letter-spacing: .1em; width: 110px; text-align: right; color: var(--gold); }
+#pause .row.tod { margin-top: -6px; }
+#pause .row.tod .opts { width: 100%; justify-content: space-between; gap: 4px; }
+#pause .row.tod button { padding: 6px 7px; font-size: 12px; letter-spacing: .1em; }
 #pause .go { margin-top: 30px; padding: 11px 44px; font-size: 15px; letter-spacing: .6em; text-indent: .6em; }
 #pause .tips { margin-top: 26px; font-size: 14px; letter-spacing: .14em; opacity: .95; line-height: 2.0; color: #efe6d2; background: rgba(10, 8, 6, .55); padding: 12px 20px; border-radius: 6px; text-shadow: 0 1px 3px rgba(0, 0, 0, .8); }
 
@@ -2582,7 +2587,7 @@ void main() {
       albedo = mix(albedo, albedo * 0.42, win * wfade);
       albedo *= 1.0 - inBand * (1.0 - wfade) * 0.16;
       float farWin = 1.0;
-      if (uZoneOn > 0.5 && P.z > 12000.0 && P.z < 42000.0) { vec2 fc = vec2(floor(uv.x / 70.0), floor(uv.y / 37.0)); farWin = step(0.62, 0.55 * hash21(fc) + 0.45 * hash21(floor(fc / vec2(4.0, 2.0)) + 9.0)) * 2.6 * step(0.03, fract(uv.y / 260.0)) * step(fract(uv.x / 70.0), 0.82); }      // v4.4（用户：远看是一条条“条形码”灯带）：远处的窗带拆成成簇亮灭的窗格，3–5 格一簇，亮四成上下
+      if (uZoneOn > 0.5 && P.z > 12000.0 && P.z < 42000.0) { vec2 fc = vec2(floor(uv.x / 70.0), floor(uv.y / 37.0)); farWin = step(0.62, 0.55 * hash21(fc) + 0.45 * hash21(floor(fc / vec2(4.0, 2.0)) + 9.0)) * 4.2 * step(0.03, fract(uv.y / 260.0)) * step(fract(uv.x / 70.0), 0.82); }      // v4.4（用户：远看是一条条“条形码”灯带）：远处的窗带拆成成簇亮灭的窗格，3–5 格一簇，亮四成上下
       emissive = vec3(1.0, 0.52, 0.19) * uNight * (win * wfade * step(0.5, wseed) * 1.2 + inBand * (1.0 - wfade) * 0.10 * farWin);
       // v1.0 月门长墙（实例参数 w = 2）：夜里补一层很淡的冷色“月照”，不然整道墙逆光、只剩一块黑——参考帧里那道墙是被月光照亮的
       if (vIP.w > 1.5 && vIP.w < 2.5) emissive += albedo * vec3(0.55, 0.65, 0.85) * 0.22 * uNight;
@@ -2782,10 +2787,10 @@ void main() {
       float seed = hash21(floor(vec2(uv.x, vIP.y * 91.0 + floor(P.y * 0.02) + mega * floor(uv.y) * 7.0)));
       float lit = step(mix(0.28, 0.42, mega), seed);
       bool zw = uZoneOn > 0.5 && P.z > 12000.0 && P.z < 42000.0;      // 天门、天柱（开场看得到的）和月门（结尾）不动
-      if (zw) lit = step(mix(0.66, 0.48, mega), hash21(vec2(floor(uv.x / 3.0) + 0.5 * floor(P.y * 0.02), floor(P.y * 0.02) + vIP.y * 37.0)));      // v4.6（复评：窗太满像灯箱）：启程之后塔楼亮三成多、巨殿亮五成，按三开间成簇、上下层错开
+      if (zw) lit = step(mix(0.56, 0.42, mega), hash21(vec2(floor(uv.x / 3.0) + 0.5 * floor(P.y * 0.02), floor(P.y * 0.02) + vIP.y * 37.0)));      // v4.6（复评：窗太满像灯箱）：启程之后塔楼亮三成多、巨殿亮五成，按三开间成簇、上下层错开
       float bayK = mix(1.0, 0.18 + 0.9 * hash21(vec2(floor(uv.x / 8.0), floor(uv.y) + 3.0)), mega);
       emissive = vec3(1.0, 0.48, 0.15) * (1.0 - bars) * uNight * lit * (1.0 + 0.9 * seed) * bayK;
-      if (zw) emissive *= 0.58;
+      if (zw) emissive *= 1.35;      // v4.8（用户：夜里宫殿的灯再亮一些）：0.58 → 1.35，亮窗也多一成
       rough = 0.8;
     } else if (fr < 0.5) {
       float boss = smoothstep(0.09, 0.07, length(vec2(leaf - 0.5, (ly - 0.17) * 1.4)));
@@ -4491,6 +4496,11 @@ void main() {
   } else if (k == 3) {     // 流线
     float x = abs(vUv.x * 2.0 - 1.0);
     a = exp(-x * x * 8.0) * sin(vUv.y * PI);
+  } else if (k == 6) {     // v4.7 花瓣（流线方片：uv.x 横向，uv.y 由瓣根到瓣尖）：一侧鼓一侧收、瓣尖一道小缺口；中间略深、边缘软
+    float x = vUv.x * 2.0 - 1.0, y = vUv.y;
+    float w = pow(sin(PI * pow(y, 0.75)), 0.8) * (1.0 + 0.25 * x);
+    float notch = step(0.82, y) * (1.0 - step(0.16, abs(x - 0.05)));
+    a = smoothstep(w, w * 0.6, abs(x)) * (1.0 - notch) * (0.75 + 0.25 * (1.0 - y));
   } else if (k == 5) {     // 涟漪：贴水面的一圈细环（uv 0..1 的方片）
     float r = length(vUv * 2.0 - 1.0);
     a = exp(-pow((r - 0.82) / 0.07, 2.0)) * smoothstep(1.0, 0.95, r);
@@ -8423,10 +8433,12 @@ const UI_HTML = `
   <h2>暂歇</h2>
   <div class="row"><span>画质</span><div class="opts" id="qopts"><button data-q="low">低</button><button data-q="medium">中</button><button data-q="high">高</button><button data-q="ultra">极致</button></div></div>
   <div class="row"><span>音量</span><input type="range" id="vol" min="0" max="100" value="70"></div>
+  <div class="row"><span>时辰</span><input type="range" id="todr" min="0" max="23.75" step="0.05" value="6"><em id="todv"></em></div>
+  <div class="row tod"><div class="opts" id="todopts"><button data-t="auto">随行</button><button data-t="6">拂晓</button><button data-t="12">正午</button><button data-t="16.2">午后</button><button data-t="17.6">黄昏</button><button data-t="18.4">蓝调</button><button data-t="20">入夜</button><button data-t="23">深夜</button></div></div>
   <div class="row"><span>纵向反转</span><div class="opts"><button id="inv">关</button></div></div>
   <div class="row"><span>性能读数</span><div class="opts"><button id="fpsbtn">关</button></div></div>
   <button class="go" id="resume">继续</button>
-  <div class="tips">点亮七盏长明灯，天光便从拂晓走到月夜<br>拾取沿途灵光可补充剑气（Shift 疾行）<br>F 落地行走 / 再起飞<br>H 隐藏界面　·　V 剑气流光　·　P 摄影模式　·　[ ] 在通关后调节时辰</div>
+  <div class="tips">点亮七盏长明灯，天光便从拂晓走到月夜<br>拾取沿途灵光可补充剑气（Shift 疾行）<br>F 落地行走 / 再起飞<br>H 隐藏界面　·　V 剑气流光　·　P 摄影模式<br>时辰可在上方随时选，「随行」回到按行程变化</div>
 </div></div>
 <div id="fps" class="hidden"></div>`;
 
@@ -8895,10 +8907,11 @@ const { buildWorld } = __m['world/world.js'];
 const { Kun, buildCranes, buildSkyLanterns, buildSkyLife, buildDragon } = __m['world/creatures.js'];
 
 const qs = new URLSearchParams(location.search);
+const BANK_K = qs.get('bank') ? +qs.get('bank') : 0.4;      // v4.8（用户：登天阶和宫殿附近的云太厚、有时像碎粒子）：天宫云山整体压到四成高
 const SHOT = qs.get('shot') === '1';
 const store = { get(k, d) { try { const v = localStorage.getItem('yunque.' + k); return v === null ? d : v; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem('yunque.' + k, v); } catch (e) { } } };
 
-const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 18.0, 18.15, 18.35, 19.3];      // v4.6（复评：蓝调太短、建筑太早黑）：18.1 / 18.35 / 18.6 → 18.0 / 18.15 / 18.35      // v4.4（用户：走过登天阶转黄昏 / 夜景、走到哪里亮到哪里）：点亮天宫之后是日落后的蓝调，往后一盏比一盏更深；开场和结尾不动。天宫白天的复刻机位用 ?tod=16.2 拍
+const STAGE_TOD = [5.86, 6.25, 7.3, 8.5, 18.0, 18.25, 18.45, 19.3];      // v4.7（v4.6 复评：太阳 −4°…−8° 的蓝调要留十几秒）：18.15 / 18.35 → 18.25 / 18.45      // v4.6（复评：蓝调太短、建筑太早黑）：18.1 / 18.35 / 18.6 → 18.0 / 18.15 / 18.35      // v4.4（用户：走过登天阶转黄昏 / 夜景、走到哪里亮到哪里）：点亮天宫之后是日落后的蓝调，往后一盏比一盏更深；开场和结尾不动。天宫白天的复刻机位用 ?tod=16.2 拍
 // 旧：[5.86, 6.25, 7.3, 8.5, 16.2, 17.15, 17.78, 19.3]      // v2.4：天宫一幕 14.6 → 16.2，配合 daycycle 里午后扳回的方位——低角度的暖光仍从左后方来      // v2.2：点亮登天阶之后由 16.2 改到 14.6——太阳高一些、从侧后方照过来，天宫的正面受光、檐下是硬阴影（参考视频 1 的光）；16.2 时殿的正面整片背光
 const VERSES = {
   A: ['第一盏 · 启明', '一灯既明，天光自东方来'], B: ['天柱', '柱擎青天，人行其下如尘'], C: ['万廊', '千柱无言，云从廊下过'],
@@ -9039,6 +9052,13 @@ function bindUI() {
   $('vol').addEventListener('input', (e) => { sound.setVolume(e.target.value / 100); store.set('vol', e.target.value); });
   const inv = $('inv'); const setInv = () => { inv.textContent = input.invertY ? '开' : '关'; inv.classList.toggle('on', input.invertY); }; setInv();
   inv.addEventListener('click', () => { input.invertY = !input.invertY; store.set('inv', input.invertY ? '1' : '0'); setInv(); });
+  { const TOD_PRE = { 6: '拂晓', 9: '上午', 12: '正午', 16.2: '午后', 17.6: '黄昏', 18.4: '蓝调', 20: '入夜', 23: '深夜' }, tr = $('todr'), tv = $('todv'), tb = [...$('todopts').querySelectorAll('button')];
+    const fmt = (t) => { t = ((t % 24) + 24) % 24; const h = Math.floor(t), m = Math.round((t - h) * 60) % 60; return '子丑寅卯辰巳午未申酉戌亥'[Math.floor(((t + 1) % 24) / 2)] + '时 ' + String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0'); };
+    const sync = () => { const t = G.todLock != null ? G.todLock : day ? day.tod : 6; tr.value = (((t % 24) + 24) % 24).toFixed(2); tv.textContent = (G.todLock != null ? '' : '随行 · ') + fmt(t); tb.forEach(b => b.classList.toggle('on', b.dataset.t === 'auto' ? G.todLock == null : G.todLock != null && Math.abs(+b.dataset.t - G.todLock) < 0.01)); };
+    const set = (t) => { if (!day) return; if (t === null) { G.todLock = null; G.todTarget = Math.max(STAGE_TOD[G.lit], G.ended ? day.tod : 0); day.tod = G.todTarget; } else G.todLock = t; G.repaint = 1.5; sync(); };
+    tb.forEach(b => { if (b.dataset.t !== 'auto') b.title = TOD_PRE[b.dataset.t] || ''; b.addEventListener('click', () => set(b.dataset.t === 'auto' ? null : +b.dataset.t)); });
+    tr.addEventListener('input', () => set(+tr.value));
+    G.todSync = sync; }
   $('fpsbtn').addEventListener('click', (e) => { G.fpsOn = !G.fpsOn; R.timer.enabled = G.fpsOn; e.target.textContent = G.fpsOn ? '开' : '关'; e.target.classList.toggle('on', G.fpsOn); $('fps').classList.toggle('hidden', !G.fpsOn); });
 }
 // ---------- 开场（v0.7）----------
@@ -9084,7 +9104,7 @@ let lockAt = 0;
 function togglePause(force) {
   if (G.state !== 'play' && G.state !== 'pause') return;
   const want = force === undefined ? G.state === 'play' : force;
-  if (want) { G.state = 'pause'; $('pause').classList.remove('hidden'); input.unlock(); }
+  if (want) { G.state = 'pause'; $('pause').classList.remove('hidden'); input.unlock(); if (G.todSync) G.todSync(); }
   else { G.state = 'play'; $('pause').classList.add('hidden'); if (!G.photo) { lockAt = performance.now(); input.lock(); } last = performance.now(); }
 }
 
@@ -9109,13 +9129,14 @@ function frame(dt, silent) {
   // v2.4 登天阶“日影飞转”：一出千柱林、踏上第一级，时辰就往午后走（比平常快一些），到阶顶正好是从左后方贴地照过来的暖光。
   // 原来要等点亮天宫那盏灯才开始走——自动巡航和飞得快的人早就飞过广场了，天宫是在上午的光里看完的
   // v4.4：登阶时时辰跟着爬升的进度走——出林是上午，阶腰午后，阶顶金色的黄昏（17.6），到天宫广场是日落（18.0）
-  if (G.lit === 3 && world.forest && world.stair2 && P.pos[2] > world.forest.z1 + 300 && Math.abs(P.pos[0] - world.forest.cx) < 2600) {
+  if (G.todLock != null) { day.tod = G.todLock; G.todTarget = G.todLock; }      // v4.8 暂停菜单的时辰选择：锁定后不再随行程推进
+  else if (G.lit === 3 && world.forest && world.stair2 && P.pos[2] > world.forest.z1 + 300 && Math.abs(P.pos[0] - world.forest.cx) < 2600) {
     const S2 = world.stair2, k = clamp((P.pos[2] - S2.zS + 600) / (S2.zEnd - S2.zS + 600), 0, 1), want = P.pos[2] > S2.zEnd + 150 ? 17.85 : k < 0.7 ? lerp(10.5, 17.2, k / 0.7) : lerp(17.2, 17.55, (k - 0.7) / 0.3);      // v4.6（复评）：金光提前到登阶的最后三成（太阳仰角十度上下）
     if (want > G.todTarget) { G.todTarget = want; G.todRate = 0.5; }
   }
   if (day.tod < G.todTarget) { const d = G.todTarget - day.tod; day.tod = Math.min(G.todTarget, day.tod + Math.max(0.02, Math.min(d * (G.todRate || 0.09), 0.6)) * dt); }
   const env = day.update();
-  if (!G.photo) P.update(dt, input, cam, G.time);
+  if (!G.photo && !G.freeze) P.update(dt, input, cam, G.time);
   // v1.3 千柱林巷底只留一道光缝：最后一公里把行者往缝的正中轻轻拉，免得一头撞上柱墙
   if (world.grp && world.grp.forest && world.forest && !G.photo) {
     const F = world.forest, near = smoothstep(F.z1 - 1100, F.z1 - 200, P.pos[2]) * (P.pos[2] < F.z1 + 20 ? 1 : 0), lx = P.pos[0] - F.cx;
@@ -9129,7 +9150,7 @@ function frame(dt, silent) {
   R.clouds.p.cirrusDay = 0.3 - 0.16 * (env.pm || 0);      // v2.4：天宫一幕的午后，卷云只留一点丝
   { const pm = env.pm || 0; R.post.tint = [0.95 + 0.11 * pm, 1.0, 1.08 - 0.18 * pm]; R.post.contrast = 1.32 + 0.15 * pm; R.post.ambCut = 0.58 * pm; R.post.ambWarm = 1.0 * pm; }      // v3.6（顾问）：檐下 / 阴影压深、反差加大，暖色略收（参考：黑褐瓦、深绛红、檐底近黑、深蓝天）      // v3.3 复评 B3：日照面再暖、檐下蓝灰填光再压（0.10/0.18/0.4/0.8 → 0.13/0.21/0.5/1.0）      // 同一段：白平衡往暖里走一点、反差加一点（暖石面、暗檐下）；别的时候是原值
   { const se = env.sunEl || 0, bh = world.grp && world.grp.forest && G.state !== 'title' && day.tod > 15 ? smoothstep(0.5, -2.5, se) * (1 - smoothstep(-10, -15, se)) : 0; R.post.ambCut -= 0.6 * bh; R.post.ambWarm -= 0.35 * bh; R.post.tint = [R.post.tint[0] - 0.03 * bh, R.post.tint[1], R.post.tint[2] + 0.05 * bh]; }      // v4.6（复评：蓝调太短、建筑太早黑）：日落后到太阳沉到地平线下十度，冷色天光把暗部抬起六成（约 +0.7 EV），白平衡略偏冷；更深的夜（结尾月门）不动；只算傍晚（拂晓的太阳也在地平线下，第一次没分开，开场整幅变了）
-  if (world.cloudBank) world.cloudBank.k = SHOT && G.lit >= 2 ? 1 : smoothstep(1500, 6500, player.pos[2]);      // 云山随行程“长”起来：标题画面、天门开场和观云台上都没有它（截图模式下行者钉在观云台，按灯数算）
+  if (world.cloudBank) world.cloudBank.k = (SHOT && G.lit >= 2 ? 1 : smoothstep(1500, 6500, player.pos[2])) * BANK_K;      // 云山随行程“长”起来：标题画面、天门开场和观云台上都没有它（截图模式下行者钉在观云台，按灯数算）
   life.update(dt);
   for (const l of lanterns) l.visible = env.night > 0.03;
   // 云面上的印子：巨鲲身下的沟与两侧的涌浪、出水 / 入水时荡开的环、行者贴着云面飞时划出的痕
@@ -9146,7 +9167,7 @@ function frame(dt, silent) {
     G.kunWasIn = kunIn > 0.5;
     for (const r of G.rings) { r.t += dt; sp.push({ a: [r.x, r.z], r: 110 + r.t * 9, k: 0.95 * Math.exp(-r.t / 10), ring: 240 + r.t * 60 }); }
     G.rings = G.rings.filter(r => r.t < 28).slice(-4);
-    if (P.state === 'fly' && P.pos[1] < 2400) { const hAbove = P.pos[1] - R.clouds.topAt(P.pos[0], P.pos[2]) * 0.62; if (hAbove < 330) { const cs = G.skimKind === 1 ? G.skim || 0 : 0; sp.push({ a: [P.pos[0], P.pos[2]], b: cs > 0 && G._cPrev ? G._cPrev : null, r: 48, k: Math.max(0.8 * (1 - smoothstep(80, 330, hAbove)) * smoothstep(15, 50, P.speed), 0.3 * cs) }); } }      // v4.5：贴云冲浪时尾迹放宽加深      // v4.6：沟改成从上一帧连到这一帧的胶囊（不再一串圆坑），浅一些、窄一些（复评：浅槽 + 两侧云脊）
+    if (P.state === 'fly' && P.pos[1] < 2400) { const hAbove = P.pos[1] - R.clouds.topAt(P.pos[0], P.pos[2]) * 0.62; if (hAbove < 330) { const cs = G.skimKind === 1 ? G.skim || 0 : 0; sp.push({ a: [P.pos[0], P.pos[2]], b: cs > 0 && G._cPrev ? G._cPrev : null, r: 48 - 22 * cs, k: Math.max(0.8 * (1 - smoothstep(80, 330, hAbove)) * smoothstep(15, 50, P.speed), 0.45 * cs) }); } }      // v4.7（v4.6 复评：沟要从剑下起、云脊贴着人抬起来）：贴云时沟收窄到 26 米、深一些      // v4.5：贴云冲浪时尾迹放宽加深      // v4.6：沟改成从上一帧连到这一帧的胶囊（不再一串圆坑），浅一些、窄一些（复评：浅槽 + 两侧云脊）
     G._cPrev = [P.pos[0], P.pos[2]];
     R.clouds.updateDisturb(cam.pos, dt, sp);
   }
@@ -9190,8 +9211,8 @@ function frame(dt, silent) {
     if (G.ended) {
       G.endT += dt;
       if (G.endT > 9 && !G.endShown) { G.endShown = true; const s = P.stats; ui.ending(`此行 ${(s.dist / 500).toFixed(0)} 里　·　用时 ${Math.floor(G.playT / 60)} 分 ${Math.floor(G.playT % 60)} 秒　·　最快 ${Math.round(s.maxSpeed * 7.2)} 里/时<br>可继续漫游　·　[ ] 调节时辰　·　P 摄影模式`); }
-      if (input.down('BracketRight')) { day.tod += dt * 1.2; G.todTarget = day.tod; }
-      if (input.down('BracketLeft')) { day.tod -= dt * 1.2; G.todTarget = day.tod; }
+      if (input.down('BracketRight')) { day.tod += dt * 1.2; G.todTarget = day.tod; if (G.todLock != null) G.todLock = day.tod; }
+      if (input.down('BracketLeft')) { day.tod -= dt * 1.2; G.todTarget = day.tod; if (G.todLock != null) G.todLock = day.tod; }
     }
   }
   if (G.photo && !G.photoJustOn) photoUpdate(dt);
@@ -9307,7 +9328,7 @@ function frame(dt, silent) {
         P.skimLift = k;
         if (k > 0.02) {
           const f = P.fwd(), fl = Math.hypot(f[0], f[2]) || 1, fx0 = f[0] / fl, fz0 = f[2] / fl, rx = fz0, rz = -fx0, sp = P.speed;
-          const n = Math.min(40, (kind === 1 ? 120 : 110) * k * dt * (0.6 + sp / 300) + Math.random());
+          const n = kind === 1 || kind === 2 ? 0 : Math.min(40, (kind === 1 ? 120 : kind === 3 ? 260 : 110) * k * dt * (0.6 + sp / 300) + Math.random());      // 花瓣两侧合计每米两片上下
           for (let i = 0; i < n; i++) {
             const side = Math.random() < 0.5 ? -1 : 1, back = Math.random() * (kind === 2 ? 2.5 : 6), lat = (kind === 1 ? 0.1 + 0.25 * Math.random() : 0.06 + 0.16 * Math.random()) * sp, up = (kind === 1 ? 0.04 + 0.06 * Math.random() : 0.05 + 0.07 * Math.random()) * sp;
             SP.push({ p: [x - fx0 * back + rx * side * 1.5, (kind === 1 ? Math.max(sy + 4, y - 1) : sy + 0.3), z - fz0 * back + rz * side * 1.5], v: [rx * side * lat + fx0 * sp * (kind === 3 ? 0.25 : 0.6), up, rz * side * lat + fz0 * sp * (kind === 3 ? 0.25 : 0.6)], t: 0, life: kind === 1 ? 1.2 + Math.random() * 1.0 : kind === 2 ? 0.18 + Math.random() * 0.2 : 0.5 + Math.random() * 0.6, kind, s: Math.random(), y0: sy });
@@ -9325,7 +9346,10 @@ function frame(dt, silent) {
         const tail = [q.p[0] - q.v[0] * 0.06, q.p[1] - q.v[1] * 0.06, q.p[2] - q.v[2] * 0.06];      // 飞沫画成顺着速度的短流线（《风行》那种拉丝），远看才读得出“溅起来”
         if (q.kind === 1) { fx.sprite(q.p, 1.2 + 3.5 * a + q.s, cam, [1.0, 0.97, 0.92, 0.3 * (1 - a) * Math.min(1, a * 5)], 4); fx.streak(q.p, tail, 0.35 + 0.5 * q.s, cam, [1.0, 0.97, 0.92, 0.55 * (1 - a) * (1 - a)]); }      // v4.6：云沫缩小、偏暖象牙色（逆光里不是纯白一团）
         else if (q.kind === 2) fx.streak(q.p, tail, 0.1 + 0.12 * q.s, cam, [0.9, 0.95, 0.97, (0.6 + 0.8 * (1 - smoothstep(0.0, 0.15, q.t))) * (1 - a)]);      // v4.6（复评：粗白线像一排针）：飞沫细一半多，刚甩出来那一下最亮
-        else if (q.kind === 3) { const c = q.s < 0.4 ? [0.95, 0.25, 0.45] : q.s < 0.7 ? [0.6, 0.3, 0.95] : [1.0, 0.9, 0.85]; fx.sprite([q.p[0] + Math.sin(q.t * 7 + q.s * 9) * 0.6, q.p[1], q.p[2]], 0.22 + 0.16 * q.s, cam, [c[0], c[1], c[2], 0.6 * (1 - a * a)], 4); }
+        else if (q.kind === 3) {      // v4.7（v4.5 复评：像跟着人撒珠子）：画成翻滚的花瓣（fx 第 6 种：一侧鼓、瓣尖缺口），夕照的粉紫和暖白，压低亮度
+          const c = q.s < 0.4 ? [0.95, 0.42, 0.55] : q.s < 0.75 ? [0.62, 0.38, 0.85] : [0.98, 0.85, 0.72], th = q.s * 20 + q.t * (5 + 4 * q.s), ph = q.t * (7 + 3 * q.s), L = 0.25 + 0.15 * q.s;
+          const d = [Math.cos(th) * Math.cos(ph) * L, Math.sin(ph) * L, Math.sin(th) * Math.cos(ph) * L], b0 = [q.p[0] + Math.sin(q.t * 7 + q.s * 9) * 0.6, q.p[1], q.p[2]];
+          fx.streak(b0, [b0[0] + d[0], b0[1] + d[1], b0[2] + d[2]], 0.09 + 0.05 * q.s, cam, [c[0], c[1], c[2], (q.s < 0.75 ? 0.5 : 0.32) * (1 - a * a)], 6); }
         else fx.sprite(q.p, 0.4 + 0.6 * a, cam, [0.95, 0.97, 1.0, 0.7 * (1 - a)], 4);
       }
       if (SP.length > 700) SP.splice(0, SP.length - 700);
@@ -9438,8 +9462,8 @@ function zoneLights() {
   zoneBuf.fill(0);
   ZONES.forEach(([id, x, z, Rz], i) => {
     const b = world.beacons.find(q => q.id === (id === 'D1' ? 'D' : id));
-    let front = b && b.lit ? Rz * 1.2 * (b.t * b.t * (3 - 2 * b.t)) : -400;
-    if (id === 'D1' && !(b && b.lit) && G.lit === 3) front = Math.max(front, player.pos[2] - z + 400);
+    let front = G.todLock != null ? Rz * 1.2 : b && b.lit ? Rz * 1.2 * (b.t * b.t * (3 - 2 * b.t)) : -400;      // v4.8：手选时辰时整座天宫都亮着
+    if (id === 'D1' && !(b && b.lit) && G.lit === 3) front = Math.max(front, player.pos[2] - z + Math.max(400, player.speed * 1.0));      // v4.7（v4.6 复评：灯要按航路提前约一秒的飞行距离亮）
     zoneBuf.set([x, z, front, Rz], i * 4);
   });
   F.uZones = zoneBuf;
@@ -9488,8 +9512,8 @@ function photoUpdate(dt) {
   const sp = (input.down('ShiftLeft') ? 420 : 60) * dt;
   const mv = (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0), sd = (input.down('KeyA') ? 1 : 0) - (input.down('KeyD') ? 1 : 0), ud = (input.down('KeyE') ? 1 : 0) - (input.down('KeyQ') ? 1 : 0);
   ph.pos = [ph.pos[0] + (f[0] * mv + r[0] * sd) * sp, ph.pos[1] + (f[1] * mv + ud) * sp, ph.pos[2] + (f[2] * mv + r[2] * sd) * sp];
-  if (input.down('BracketRight')) { day.tod += dt * 1.2; G.todTarget = Math.max(G.todTarget, day.tod); }
-  if (input.down('BracketLeft')) { day.tod -= dt * 1.2; G.todTarget = day.tod; }
+  if (input.down('BracketRight')) { day.tod += dt * 1.2; G.todTarget = Math.max(G.todTarget, day.tod); if (G.todLock != null) G.todLock = day.tod; }
+  if (input.down('BracketLeft')) { day.tod -= dt * 1.2; G.todTarget = day.tod; if (G.todLock != null) G.todLock = day.tod; }
   cam.setLook(ph.pos, f, 0); cam.fov = ph.fov;
   hero.update(player.model, player.pos, [0, 0, 0], dt, G.time, 0.15, cam.up);
   if (input.hit('KeyK')) G.snap = true;
@@ -9515,7 +9539,7 @@ function loop(now) {
   requestAnimationFrame(loop);
   let dt = (now - last) / 1000; last = now;
   { const m1 = dt * 1000, b = Math.round(m1); if (b >= 4 && b < 34) { vsN[b]++; vsS[b] += m1; } }
-  if (G.state === 'pause') return;
+  if (G.state === 'pause') { if (G.repaint > 0) { G.repaint -= Math.min(dt, 0.1); G.freeze = true; frame(Math.min(Math.max(dt, 1 / 120), 0.1), false); G.freeze = false; } return; }      // v4.8：暂停时换了时辰，背后的画面照常画一秒半（行者不动）
   if (dt > 0.1) dt = 0.1; if (dt <= 0) dt = 1 / 120;
   frame(dt, false);
   if (G.snapCb) { const cb = G.snapCb; G.snapCb = null; canvas.toBlob(cb, 'image/png'); }
