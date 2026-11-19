@@ -7771,6 +7771,7 @@ function buildWorld(gl, onProgress = () => {}) {
     add(tg, [T(GC[0], 0, GC[2], 0)], { name: 'H.gardenTiers', feature: 300 });
     add(K.vineCurtainGeo(40, 90, 3), vines, { name: 'H.vines', alpha: true, twoSided: true, feature: 30, maxDist: 9000, shadow: false });
     add(P.fall, falls, { name: 'H.gardenFalls', alpha: true, twoSided: true, feature: 40, shadow: false });
+    for (const m of falls) (W.fallMist || (W.fallMist = [])).push({ p: [m[12], 1300, m[14]], w: 150 });      // v4.5（计划：瀑布底加水雾）：空中花园四面垂下的瀑布，落进云里的地方也起一团水雾
     add(rb[0], beds, { name: 'H.gardenRoses', feature: 6, maxDist: 4000 });
     // 台上的树：每层一圈松（台越低越多）
     const gp = []; tiers.forEach(([y, w], k) => { for (let i = 0; i < 14 - k * 2; i++) { const a = fr() * 6.283, d = (0.3 + fr() * 0.15) * w, ps = 4 + fr() * 3; gp.push(TS(GC[0] + Math.cos(a) * d, y + 6, GC[2] + Math.sin(a) * d, fr() * 6, ps, ps, ps)); } });
@@ -9096,7 +9097,7 @@ function frame(dt, silent) {
     G.kunWasIn = kunIn > 0.5;
     for (const r of G.rings) { r.t += dt; sp.push({ a: [r.x, r.z], r: 110 + r.t * 9, k: 0.95 * Math.exp(-r.t / 10), ring: 240 + r.t * 60 }); }
     G.rings = G.rings.filter(r => r.t < 28).slice(-4);
-    if (P.state === 'fly' && P.pos[1] < 2400) { const hAbove = P.pos[1] - R.clouds.topAt(P.pos[0], P.pos[2]) * 0.62; if (hAbove < 330) sp.push({ a: [P.pos[0], P.pos[2]], r: 48, k: 0.8 * (1 - smoothstep(80, 330, hAbove)) * smoothstep(15, 50, P.speed) }); }
+    if (P.state === 'fly' && P.pos[1] < 2400) { const hAbove = P.pos[1] - R.clouds.topAt(P.pos[0], P.pos[2]) * 0.62; if (hAbove < 330) sp.push({ a: [P.pos[0], P.pos[2]], r: 48 + (G.skimKind === 1 ? 70 * (G.skim || 0) : 0), k: Math.max(0.8 * (1 - smoothstep(80, 330, hAbove)) * smoothstep(15, 50, P.speed), G.skimKind === 1 ? 0.95 * (G.skim || 0) : 0) }); }      // v4.5：贴云冲浪时尾迹放宽加深
     R.clouds.updateDisturb(cam.pos, dt, sp);
   }
 
@@ -9241,6 +9242,41 @@ function frame(dt, silent) {
     for (let i = R2.length - 1; i >= 0; i--) { const r = R2[i]; r.t += dt; if (r.t > r.life) { R2.splice(i, 1); continue; } const k = r.t / r.life; fx.ring(r.p, (0.15 + k * 1.6) * r.big, cam, [0.85, 0.92, 1.0, 0.55 * (1 - k) * (1 - k)]); }
     for (let i = D2.length - 1; i >= 0; i--) { const d = D2[i]; d.t += dt; d.v[1] -= 9.8 * dt; d.p[0] += d.v[0] * dt; d.p[1] += d.v[1] * dt; d.p[2] += d.v[2] * dt; if (d.p[1] < d.y0) { R2.push({ p: [d.p[0], d.y0 + 0.03, d.p[2]], t: 0, life: 0.7, big: 0.2 }); D2.splice(i, 1); continue; } fx.sprite(d.p, 0.03, cam, [0.85, 0.93, 1.0, 1.2]); }
     if (R2.length > 200) R2.splice(0, R2.length - 200);
+    // v4.5 掠面（用户：水和花借鉴《风行》，云海也做成冲浪）：贴着云顶 / 水面 / 花田 / 雪地低飞时，身后两侧甩出飞沫或花瓣，
+    //   水面上拖出一串 V 形的涟漪，云面的扰动（R.clouds 的 disturb）跟着放大成一道尾迹。越贴越低、越快越猛
+    { const SP = fx.spray || (fx.spray = []);
+      if (P.state === 'fly' && G.state === 'play' && !G.photo && world.grp && world.grp.forest) {
+        const x = P.pos[0], y = P.pos[1], z = P.pos[2];
+        let sy = -1e9, kind = 0, hMax = 0;      // kind 1 云 / 2 水 / 3 花 / 4 雪
+        const ct = R.clouds.topAt(x, z) + 10; if (ct < y) { sy = ct; kind = 1; hMax = 150; }
+        for (const w of (world.waters || [])) if (x > w.x0 && x < w.x1 && z > w.z0 && z < w.z1 && w.y < y && w.y > sy) { sy = w.y; kind = 2; hMax = 60; }
+        for (const s of (world.walk || [])) { const dx = x - s.c[0], dz = z - s.c[2]; if (Math.hypot(dx, dz) < s.rim(Math.atan2(dz, dx)) * 0.95) { const gy = s.c[1] + s.h(dx, dz); if (gy < y && gy > sy + 0.5) { sy = gy; kind = s.c[0] < -5000 ? 4 : 3; hMax = 45; } } }
+        const h = y - sy, k = kind ? (1 - smoothstep(hMax * 0.25, hMax, h)) * smoothstep(70, 260, P.speed) : 0;
+        G.skim = k; G.skimKind = kind;
+        if (k > 0.02) {
+          const f = P.fwd(), fl = Math.hypot(f[0], f[2]) || 1, fx0 = f[0] / fl, fz0 = f[2] / fl, rx = fz0, rz = -fx0, sp = P.speed;
+          const n = Math.min(40, (kind === 1 ? 240 : 110) * k * dt * (0.6 + sp / 300) + Math.random());
+          for (let i = 0; i < n; i++) {
+            const side = Math.random() < 0.5 ? -1 : 1, back = Math.random() * 6, lat = (kind === 1 ? 0.1 + 0.25 * Math.random() : 0.06 + 0.16 * Math.random()) * sp, up = (kind === 1 ? 0.04 + 0.06 * Math.random() : 0.05 + 0.07 * Math.random()) * sp;
+            SP.push({ p: [x - fx0 * back + rx * side * 1.5, (kind === 1 ? Math.max(sy + 14, y - 6) : sy + 0.3), z - fz0 * back + rz * side * 1.5], v: [rx * side * lat + fx0 * sp * (kind === 3 ? 0.25 : 0.6), up, rz * side * lat + fz0 * sp * (kind === 3 ? 0.25 : 0.6)], t: 0, life: kind === 1 ? 1.2 + Math.random() * 1.0 : 0.5 + Math.random() * 0.6, kind, s: Math.random(), y0: sy });
+          }
+          if (kind === 2 && (fx._wk = (fx._wk || 0) + dt) > 0.045) { fx._wk = 0; R2.push({ p: [x, sy + 0.05, z], t: 0, life: 1.8, big: 6 + sp * 0.03 }); }
+        }
+      } else G.skim = 0;
+      for (let i = SP.length - 1; i >= 0; i--) {
+        const q = SP[i]; q.t += dt; if (q.t > q.life) { SP.splice(i, 1); continue; }
+        const a = q.t / q.life, drag = q.kind === 3 ? 2.2 : q.kind === 1 ? 0.9 : 0.6;
+        q.v[0] *= Math.exp(-drag * dt); q.v[2] *= Math.exp(-drag * dt); q.v[1] -= (q.kind === 2 ? 9.8 : q.kind === 1 ? 1.5 : q.kind === 3 ? 1.2 : 4) * dt;
+        q.p[0] += q.v[0] * dt; q.p[1] += q.v[1] * dt; q.p[2] += q.v[2] * dt;
+        if (q.kind === 2 && q.p[1] < q.y0) { q.p[1] = q.y0; q.v[1] *= -0.2; }
+        const tail = [q.p[0] - q.v[0] * 0.06, q.p[1] - q.v[1] * 0.06, q.p[2] - q.v[2] * 0.06];      // 飞沫画成顺着速度的短流线（《风行》那种拉丝），远看才读得出“溅起来”
+        if (q.kind === 1) { fx.sprite(q.p, 2 + 7 * a + 2 * q.s, cam, [1.0, 1.0, 1.0, 0.35 * (1 - a) * Math.min(1, a * 5)], 4); fx.streak(q.p, tail, 0.7 + 1.2 * q.s, cam, [1.0, 1.0, 1.0, 0.85 * (1 - a)]); }
+        else if (q.kind === 2) fx.streak(q.p, tail, 0.25 + 0.3 * q.s, cam, [0.9, 0.96, 1.0, 1.1 * (1 - a)]);
+        else if (q.kind === 3) { const c = q.s < 0.4 ? [0.95, 0.25, 0.45] : q.s < 0.7 ? [0.6, 0.3, 0.95] : [1.0, 0.9, 0.85]; fx.sprite([q.p[0] + Math.sin(q.t * 7 + q.s * 9) * 0.6, q.p[1], q.p[2]], 0.22 + 0.16 * q.s, cam, [c[0], c[1], c[2], 0.6 * (1 - a * a)], 4); }
+        else fx.sprite(q.p, 0.4 + 0.6 * a, cam, [0.95, 0.97, 1.0, 0.7 * (1 - a)], 4);
+      }
+      if (SP.length > 700) SP.splice(0, SP.length - 700);
+    }
     // v2.0 雪原：驯鹿慢慢走（整批平移，走到头再从南边出现）；镜头在这片时下雪；光门缝前雪地上一道暖光
     if (world.herd) {
       const H = world.herd, L = H.z1 - H.z0, zz = H.z0 + ((G.time * 2.2) % L), dx = H.x - H.c[0], dz = zz - H.c[2];
